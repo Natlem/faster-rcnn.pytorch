@@ -256,11 +256,11 @@ if __name__ == '__main__':
             if args.class_agnostic:
                 box_deltas = box_deltas.view(-1, 4) * torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_STDS).cuda() \
                            + torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_MEANS).cuda()
-                box_deltas = box_deltas.view(1, -1, 4)
+                box_deltas = box_deltas.view(args.batch_size, -1, 4)
             else:
                 box_deltas = box_deltas.view(-1, 4) * torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_STDS).cuda() \
                            + torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_MEANS).cuda()
-                box_deltas = box_deltas.view(1, -1, 4 * len(imdb.classes))
+                box_deltas = box_deltas.view(args.batch_size, -1, 4 * len(imdb.classes))
 
           pred_boxes = bbox_transform_inv(boxes, box_deltas, 1)
           pred_boxes = clip_boxes(pred_boxes, im_info.data, 1)
@@ -288,8 +288,14 @@ if __name__ == '__main__':
               cls_boxes = pred_boxes[inds, :]
             else:
               cls_boxes = pred_boxes[inds][:, j * 4:(j + 1) * 4]
+<<<<<<< HEAD
 
             cls_dets = torch.cat((cls_boxes, cls_scores.unsqueeze(1)), 1)
+=======
+            
+            cls_dets = torch.cat((cls_boxes, cls_scores.unsqueeze(1)), 1)
+            # cls_dets = torch.cat((cls_boxes, cls_scores), 1)
+>>>>>>> 0e6f131c72ca9c9ac30750972a2a2515a77f2635
             cls_dets = cls_dets[order]
             keep = nms(cls_dets, cfg.TEST.NMS)
             cls_dets = cls_dets[keep.view(-1).long()]

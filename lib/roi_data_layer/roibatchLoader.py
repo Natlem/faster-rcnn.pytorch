@@ -92,6 +92,8 @@ class roibatchLoader(data.Dataset):
                 min_y = int(torch.min(gt_boxes[:,1]))
                 max_y = int(torch.max(gt_boxes[:,3]))
                 trim_size = int(np.floor(data_width / ratio))
+                if trim_size > data_height:
+                    trim_size = data_height                
                 box_region = max_y - min_y + 1
                 if min_y == 0:
                     y_s = 0
@@ -126,6 +128,8 @@ class roibatchLoader(data.Dataset):
                 min_x = int(torch.min(gt_boxes[:,0]))
                 max_x = int(torch.max(gt_boxes[:,2]))
                 trim_size = int(np.ceil(data_height * ratio))
+                if trim_size > data_width:
+                    trim_size = data_width                
                 box_region = max_x - min_x + 1
                 if min_x == 0:
                     x_s = 0
@@ -176,7 +180,8 @@ class roibatchLoader(data.Dataset):
             trim_size = min(data_height, data_width)
             padding_data = torch.FloatTensor(trim_size, trim_size, 3).zero_()
             padding_data = data[0][:trim_size, :trim_size, :]
-            gt_boxes.clamp_(0, trim_size)
+            # gt_boxes.clamp_(0, trim_size)
+            gt_boxes[:, :4].clamp_(0, trim_size)
             im_info[0, 0] = trim_size
             im_info[0, 1] = trim_size
 
