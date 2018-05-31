@@ -55,10 +55,10 @@ def parse_args():
                       default=100, type=int)
   parser.add_argument('--checkpoint_interval', dest='checkpoint_interval',
                       help='number of iterations to display',
-                      default=10000, type=int)
+                      default=1000, type=int)
 
   parser.add_argument('--save_dir', dest='save_dir',
-                      help='directory to save models', default="/srv/share/jyang375/models",
+                      help='directory to save models', default="./pth_train_dir",
                       nargs=argparse.REMAINDER)
   parser.add_argument('--nw', dest='num_workers',
                       help='number of worker to load data',
@@ -168,6 +168,10 @@ if __name__ == '__main__':
   elif args.dataset == "coco":
       args.imdb_name = "coco_2014_train+coco_2014_valminusminival"
       args.imdbval_name = "coco_2014_minival"
+      args.set_cfgs = ['ANCHOR_SCALES', '[4, 8, 16, 32]', 'ANCHOR_RATIOS', '[0.5,1,2]', 'MAX_NUM_GT_BOXES', '50']
+  elif args.dataset == "holly":
+      args.imdb_name = "holly_trainval"
+      args.imdbval_name = "holly_test"
       args.set_cfgs = ['ANCHOR_SCALES', '[4, 8, 16, 32]', 'ANCHOR_RATIOS', '[0.5,1,2]', 'MAX_NUM_GT_BOXES', '50']
   elif args.dataset == "imagenet":
       args.imdb_name = "imagenet_train"
@@ -331,6 +335,20 @@ if __name__ == '__main__':
       if args.net == "vgg16":
           clip_gradient(fasterRCNN, 10.)
       optimizer.step()
+        
+      if step % args.checkpoint_interval == 0:
+        save_name = os.path.join(output_dir, 'faster_rcnn_{}_{}_{}.pth'.format(args.session, epoch, step))
+        save_checkpoint({
+          'session': args.session,
+          'epoch': epoch + 1,
+          'model': fasterRCNN.state_dict(),
+          'optimizer': optimizer.state_dict(),
+          'pooling_mode': cfg.POOLING_MODE,
+          'class_agnostic': args.class_agnostic,
+         }, save_name)
+        print('save model: {}'.format(save_name))
+
+
 
       if step % args.disp_interval == 0:
         end = time.time()

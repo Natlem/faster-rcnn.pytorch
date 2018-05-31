@@ -57,7 +57,7 @@ def parse_args():
                       help='set config keys', default=None,
                       nargs=argparse.REMAINDER)
   parser.add_argument('--load_dir', dest='load_dir',
-                      help='directory to load models', default="/srv/share/jyang375/models",
+                      help='directory to load models', default="./models",
                       nargs=argparse.REMAINDER)
   parser.add_argument('--cuda', dest='cuda',
                       help='whether use CUDA',
@@ -119,6 +119,10 @@ if __name__ == '__main__':
       args.imdb_name = "coco_2014_train+coco_2014_valminusminival"
       args.imdbval_name = "coco_2014_minival"
       args.set_cfgs = ['ANCHOR_SCALES', '[4, 8, 16, 32]', 'ANCHOR_RATIOS', '[0.5,1,2]']
+  elif args.dataset == "holly":
+      args.imdb_name = "holly_trainval"
+      args.imdbval_name = "holly_test"
+      args.set_cfgs = ['ANCHOR_SCALES', '[4, 8, 16, 32]', 'ANCHOR_RATIOS', '[0.5,1,2]', 'MAX_NUM_GT_BOXES', '50']
   elif args.dataset == "imagenet":
       args.imdb_name = "imagenet_train"
       args.imdbval_name = "imagenet_val"
@@ -285,7 +289,7 @@ if __name__ == '__main__':
             else:
               cls_boxes = pred_boxes[inds][:, j * 4:(j + 1) * 4]
 
-            cls_dets = torch.cat((cls_boxes, cls_scores), 1)
+            cls_dets = torch.cat((cls_boxes, cls_scores.unsqueeze(1)), 1)
             cls_dets = cls_dets[order]
             keep = nms(cls_dets, cfg.TEST.NMS)
             cls_dets = cls_dets[keep.view(-1).long()]
