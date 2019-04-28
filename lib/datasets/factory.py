@@ -15,8 +15,13 @@ from datasets.pascal_voc import pascal_voc
 from datasets.coco import coco
 from datasets.imagenet import imagenet
 from datasets.vg import vg
+from datasets.hollywood import hollywood
 
 import numpy as np
+
+for split in ['trainval','test']:
+    name = 'hollywood_{}'.format(split)
+    __sets[name] = (lambda split=split: hollywood(split))
 
 # Set up voc_<year>_<split>
 for year in ['2007', '2012']:
