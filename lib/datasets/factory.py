@@ -16,10 +16,15 @@ from datasets.coco import coco
 from datasets.imagenet import imagenet
 from datasets.vg import vg
 from datasets.hollywood import hollywood
+from datasets.SCUTA import scuta
 
 import numpy as np
 
 for split in ['trainval','test']:
+    name = 'scuta_{}'.format(split)
+    __sets[name] = (lambda split=split: scuta(split))
+
+for split in ['trainval','test', 'debug']:
     name = 'hollywood_{}'.format(split)
     __sets[name] = (lambda split=split: hollywood(split))
 

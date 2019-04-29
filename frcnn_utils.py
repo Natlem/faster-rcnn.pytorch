@@ -58,6 +58,11 @@ class FasterRCNN_prepare():
             imdb_name = "hollywood_trainval"
             imdbval_name = "hollywood_test"
             set_cfgs = ['ANCHOR_SCALES', '[4, 8, 16, 32]', 'ANCHOR_RATIOS', '[0.5,1,2]', 'MAX_NUM_GT_BOXES', '20']
+        elif self.dataset == "scuta":
+            imdb_name = "scuta_trainval"
+            imdbval_name = "scuta_test"
+            set_cfgs = ['ANCHOR_SCALES', '[4, 8, 16, 32]', 'ANCHOR_RATIOS', '[0.5,1,2]', 'MAX_NUM_GT_BOXES', '20']
+
 
         if self.cfg_file is None:
             self.cfg_file = "frcnn/cfgs/{}_ls.yml".format(self.net) if self.large_scale else "frcnn/cfgs/{}.yml".format(self.net)
@@ -83,7 +88,7 @@ class FasterRCNN_prepare():
         dataset_train = roibatchLoader(roidb_train, ratio_list_train, ratio_index_train, self.batch_size_train, \
                                        self.imdb_train.num_classes, training=True)
         self.dataloader_train = torch.utils.data.DataLoader(dataset_train, batch_size=self.batch_size_train,
-                                                       sampler=sampler_batch, num_workers=0)
+                                                       sampler=sampler_batch, num_workers=1)
         save_name = 'faster_rcnn_{}'.format(self.net)
         self.num_images_test = len(self.imdb_test.image_index)
         self.all_boxes = [[[] for _ in range(self.num_images_test)]
@@ -92,7 +97,7 @@ class FasterRCNN_prepare():
         dataset_test = roibatchLoader(roidb_test, ratio_list_test, ratio_index_test, self.batch_size_test, \
                                       self.imdb_test.num_classes, training=False, normalize=False)
         self.dataloader_test = torch.utils.data.DataLoader(dataset_test, batch_size=self.batch_size_test,
-                                                      shuffle=False, num_workers=0,
+                                                      shuffle=False, num_workers=1,
                                                       pin_memory=True)
 
         self.iters_per_epoch = int(self.train_size / self.batch_size_train)

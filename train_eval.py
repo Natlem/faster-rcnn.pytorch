@@ -27,6 +27,8 @@ from visdom_logger.logger import VisdomLogger
 import functools
 from collections import OrderedDict
 
+
+
 def train_eval_fasterRCNN(epochs, **kwargs):
 
     frcnn_extra = kwargs["frcnn_extra"]
@@ -36,9 +38,7 @@ def train_eval_fasterRCNN(epochs, **kwargs):
     cuda = kwargs["cuda"]
 
     logger = kwargs["logger"]
-    logger_id = ""
-    if "logger_id" in kwargs:
-        logger_id = kwargs["logger_id"]
+    logger_id = frcnn_extra.dataset
 
     is_break = False
     if "is_break" in kwargs and kwargs["is_break"]:
@@ -72,14 +72,14 @@ def main():
     lr = 0.001
     momentum = 0.9
     device = torch.device("cuda")
-    epochs = 10
+    epochs = 20
 
     # Model Config
     net = "vgg16"
     pretrained = True
 
     batch_size = 1
-    frcnn_extra = FasterRCNN_prepare(net, batch_size, "hollywood", "cfgs/vgg16.yml")
+    frcnn_extra = FasterRCNN_prepare(net, batch_size, "scuta", "cfgs/vgg16.yml")
     frcnn_extra.forward()
 
     if frcnn_extra.net == "vgg16":
@@ -102,7 +102,7 @@ def main():
     logger = LoggerForSacred(logger)
 
     train_eval_fasterRCNN(epochs, cuda=device, model=fasterRCNN, optimizer=optimizer,
-                   logger=logger, frcnn_extra=frcnn_extra, is_break=True)
+                   logger=logger, frcnn_extra=frcnn_extra, is_break=False)
 
 
 
