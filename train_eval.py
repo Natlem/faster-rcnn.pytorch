@@ -21,7 +21,7 @@ import torch.nn as nn
 import os
 import time
 
-from frcnn_utils import FasterRCNN_prepare, train_frcnn, eval_frcnn
+from frcnn_utils import FasterRCNN_prepare, train_frcnn, eval_frcnn, LoggerForSacred
 from visdom_logger.logger import VisdomLogger
 
 import functools
@@ -83,7 +83,7 @@ def main():
     frcnn_extra.forward()
 
     if frcnn_extra.net == "vgg16":
-        fasterRCNN = vgg16(frcnn_extra.imdb_train.classes, pretrained=pretrained, class_agnostic=frcnn_extra.class_agnostic)
+        fasterRCNN = vgg16(frcnn_extra.imdb_train.classes, pretrained=pretrained, class_agnostic=frcnn_extra.class_agnostic, model_path='data/pretrained_model/vgg16_caffe.pth')
 
     fasterRCNN.create_architecture()
     params = []
@@ -99,6 +99,7 @@ def main():
     fasterRCNN = fasterRCNN.to(device)
 
     logger = VisdomLogger(port=9000)
+    logger = LoggerForSacred(logger)
 
     train_eval_fasterRCNN(epochs, cuda=device, model=fasterRCNN, optimizer=optimizer,
                    logger=logger, frcnn_extra=frcnn_extra, is_break=True)

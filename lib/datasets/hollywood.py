@@ -124,14 +124,14 @@ class hollywood(imdb):
             print('{} gt roidb loaded from {}'.format(self.name, cache_file))
             return roidb
 
-        gt_roidb = []
-        for index in self.image_index:
-            roi = self._load_pascal_annotation(index)
-            if roi is not None:
-                gt_roidb.append(roi)
+        #gt_roidb = []
+        #for index in self.image_index:
+        #    roi = self._load_pascal_annotation(index)
+        #    if roi is not None:
+        #        gt_roidb.append(roi)
 
-        #gt_roidb = [self._load_pascal_annotation(index)
-        #            for index in self.image_index]
+        gt_roidb = [self._load_pascal_annotation(index)
+                    for index in self.image_index]
         with open(cache_file, 'wb') as fid:
             pickle.dump(gt_roidb, fid, pickle.HIGHEST_PROTOCOL)
         print('wrote gt roidb to {}'.format(cache_file))
@@ -220,9 +220,13 @@ class hollywood(imdb):
         #     #     print 'Removed {} difficult objects'.format(
         #     #         len(objs) - len(non_diff_objs))
         #     objs = non_diff_objs
-        num_objs = len(objs)
-        if num_objs == 0:
-            return None
+
+        # Check for real bnbbox since Hollywood dataset xml is not all the time correct
+        num_objs = 0
+        for ix, obj in enumerate(objs):
+            bbox = obj.find('bndbox')
+            if bbox is not None:
+                num_objs += 1
 
         boxes = np.zeros((num_objs, 4), dtype=np.uint16)
         gt_classes = np.zeros((num_objs), dtype=np.int32)
@@ -232,38 +236,32 @@ class hollywood(imdb):
         ishards = np.zeros((num_objs), dtype=np.int32)
 
         # Load object bounding boxes into a data frame.
-        try:
-            for ix, obj in enumerate(objs):
-                bbox = obj.find('bndbox')
-                # Make pixel indexes 0-based
-                if bbox is None:
-                    continue
-                x1 = float(bbox.find('xmin').text) - 1
-                y1 = float(bbox.find('ymin').text) - 1
-                x2 = float(bbox.find('xmax').text) - 1
-                y2 = float(bbox.find('ymax').text) - 1
+        for ix, obj in enumerate(objs):
+            bbox = obj.find('bndbox')
+            # Make pixel indexes 0-based
+            x1 = float(bbox.find('xmin').text) - 1
+            y1 = float(bbox.find('ymin').text) - 1
+            x2 = float(bbox.find('xmax').text) - 1
+            y2 = float(bbox.find('ymax').text) - 1
 
-                diffc = obj.find('difficult')
-                difficult = 0  # if diffc == None else int(diffc.text)
-                ishards[ix] = difficult
+            diffc = obj.find('difficult')
+            difficult = 0 if diffc == None else int(diffc.text)
+            ishards[ix] = difficult
 
-                cls = self._class_to_ind[obj.find('name').text.lower().strip()]
-                boxes[ix, :] = [x1, y1, x2, y2]
-                gt_classes[ix] = cls
-                overlaps[ix, cls] = 1.0
-                seg_areas[ix] = (x2 - x1 + 1) * (y2 - y1 + 1)
+            cls = self._class_to_ind[obj.find('name').text.lower().strip()]
+            boxes[ix, :] = [x1, y1, x2, y2]
+            gt_classes[ix] = cls
+            overlaps[ix, cls] = 1.0
+            seg_areas[ix] = (x2 - x1 + 1) * (y2 - y1 + 1)
 
-            overlaps = scipy.sparse.csr_matrix(overlaps)
+        overlaps = scipy.sparse.csr_matrix(overlaps)
 
-            return {'boxes': boxes,
-                    'gt_classes': gt_classes,
-                    'gt_ishard': ishards,
-                    'gt_overlaps': overlaps,
-                    'flipped': False,
-                    'seg_areas': seg_areas}
-        except Exception as e:
-            print(filename)
-            print(e)
+        return {'boxes': boxes,
+                'gt_classes': gt_classes,
+                'gt_ishard': ishards,
+                'gt_overlaps': overlaps,
+                'flipped': False,
+                'seg_areas': seg_areas}
 
     def _get_comp_id(self):
         comp_id = (self._comp_id + '_' + self._salt if self.config['use_salt']
@@ -300,12 +298,10 @@ class hollywood(imdb):
     def _do_python_eval(self, output_dir='output', out=True):
         annopath = os.path.join(
             self._devkit_path,
-            'Holly',
             'Annotations',
             '{:s}.xml')
         imagesetfile = os.path.join(
             self._devkit_path,
-            'Holly',
             'ImageSets',
             'Main',
             self._image_set + '.txt')
