@@ -61,8 +61,8 @@ def train_eval_fasterRCNN(epochs, **kwargs):
         torch.save(model, "frcnn_model_{}_{}_{}_{}".format(frcnn_extra.net, epoch, map, frcnn_extra.dataset))
         torch.save(optimizer, "frcnn_op_model_{}_{}_{}_{}".format(frcnn_extra.net, epoch, map, frcnn_extra.dataset))
         if logger is not None:
-            logger.log_scalar("pgp_target_frcnn_{}_training_loss".format(logger_id), total_loss, epoch)
-            logger.log_scalar("pgp_target_frcnn_{}_after_target_val_acc".format(logger_id), map, epoch)
+            logger.log_scalar("frcnn_{}_{}_training_loss".format(frcnn_extra.net, logger_id), total_loss, epoch)
+            logger.log_scalar("frcnn_{}_{}_after_target_val_acc".format(frcnn_extra.net, logger_id), map, epoch)
         torch.cuda.empty_cache()
 
 
@@ -72,18 +72,22 @@ def main():
     lr = 0.001
     momentum = 0.9
     device = torch.device("cuda")
-    epochs = 20
+    epochs = 40
 
     # Model Config
-    net = "vgg16"
+    net = "resnet101"
     pretrained = True
 
     batch_size = 1
-    frcnn_extra = FasterRCNN_prepare(net, batch_size, "scuta", "cfgs/vgg16.yml")
+    frcnn_extra = FasterRCNN_prepare(net, batch_size, "scuta", "cfgs/{}.yml".format(net))
     frcnn_extra.forward()
 
     if frcnn_extra.net == "vgg16":
-        fasterRCNN = vgg16(frcnn_extra.imdb_train.classes, pretrained=pretrained, class_agnostic=frcnn_extra.class_agnostic, model_path='data/pretrained_model/vgg16_caffe.pth')
+        fasterRCNN = vgg16(frcnn_extra.imdb_train.classes, pretrained=pretrained, class_agnostic=frcnn_extra.class_agnostic, model_path='data/pretrained_model/{}_caffe.pth'.format(net))
+    if frcnn_extra.net == "resnet101":
+        fasterRCNN = resnet(frcnn_extra.imdb_train.classes, pretrained=pretrained,
+                           class_agnostic=frcnn_extra.class_agnostic,
+                           model_path='data/pretrained_model/{}_caffe.pth'.format(net))
 
     fasterRCNN.create_architecture()
     params = []
