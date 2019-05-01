@@ -69,10 +69,9 @@ def train_eval_fasterRCNN(epochs, **kwargs):
     return loss_acc
 
 def main():
-    lr = 0.001
+
     momentum = 0.9
     device = torch.device("cuda")
-    epochs = 40
 
     # Model Config
     net = "resnet101"
@@ -82,12 +81,17 @@ def main():
     frcnn_extra = FasterRCNN_prepare(net, batch_size, "scuta", "cfgs/{}.yml".format(net))
     frcnn_extra.forward()
 
-    if frcnn_extra.net == "vgg16":
-        fasterRCNN = vgg16(frcnn_extra.imdb_train.classes, pretrained=pretrained, class_agnostic=frcnn_extra.class_agnostic, model_path='data/pretrained_model/{}_caffe.pth'.format(net))
-    if frcnn_extra.net == "resnet101":
-        fasterRCNN = resnet(frcnn_extra.imdb_train.classes, pretrained=pretrained,
-                           class_agnostic=frcnn_extra.class_agnostic,
-                           model_path='data/pretrained_model/{}_caffe.pth'.format(net))
+    if frcnn_extra.dataset == 'scuta':
+        if frcnn_extra.net == "vgg16":
+            lr = 0.01
+            epochs = 20
+            fasterRCNN = vgg16(frcnn_extra.imdb_train.classes, pretrained=pretrained, class_agnostic=frcnn_extra.class_agnostic, model_path='data/pretrained_model/{}_caffe.pth'.format(net))
+        if frcnn_extra.net == "resnet101":
+            lr = 0.01
+            epochs = 40
+            fasterRCNN = resnet(frcnn_extra.imdb_train.classes, pretrained=pretrained,
+                               class_agnostic=frcnn_extra.class_agnostic,
+                               model_path='data/pretrained_model/{}_caffe.pth'.format(net))
 
     fasterRCNN.create_architecture()
     params = []
