@@ -13,6 +13,7 @@ from model.rpn.bbox_transform import bbox_transform_inv
 from model.rpn.bbox_transform import clip_boxes
 import numpy as np
 from model.roi_layers import nms
+from model.faster_rcnn.domain_adapt import D_cls_image, D_cls_inst
 
 from torch.utils.data.sampler import Sampler
 import torch
@@ -48,6 +49,12 @@ def train_eval_fasterRCNN(epochs, **kwargs):
 
     loss_acc = []
     lr = optimizer.param_groups[0]['lr']
+    d_cls_image = D_cls_image()
+    d_cls_inst = D_cls_inst()
+    d_image_opt = torch.optim.SGD(d_cls_image.parameters(), lr=lr * (cfg.TRAIN.DOUBLE_BIAS + 1),
+                                  weight_decay=cfg.TRAIN.WEIGHT_DECAY, momentum=cfg.TRAIN.MOMENTUM)
+    d_inst_opt = torch.optim.SGD(d_cls_inst.parameters(), lr=lr * (cfg.TRAIN.DOUBLE_BIAS + 1),
+                                 weight_decay=cfg.TRAIN.WEIGHT_DECAY, momentum=cfg.TRAIN.MOMENTUM)
 
     for epoch in range(1, epochs + 1):
 

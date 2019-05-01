@@ -28,6 +28,8 @@ class LoggerForSacred():
         if self.ex_logger is not None:
             self.ex_logger.log_scalar(metrics_name, value, step)
 
+
+
 class FasterRCNN_prepare():
     def __init__(self, net, batch_size_train, dataset, cfg_file=None):
         self.lr_decay_step = 5
@@ -46,22 +48,7 @@ class FasterRCNN_prepare():
 
 
     def forward(self):
-        if self.dataset == "pascal_voc":
-            imdb_name = "voc_2007_trainval"
-            imdbval_name = "voc_2007_test"
-            set_cfgs = ['ANCHOR_SCALES', '[4, 8, 16, 32]', 'ANCHOR_RATIOS', '[0.5,1,2]', 'MAX_NUM_GT_BOXES', '20']
-        elif self.dataset == "pascal_voc_0712":
-            imdb_name = "voc_2007_trainval+voc_2012_trainval"
-            imdbval_name = "voc_2007_test"
-            set_cfgs = ['ANCHOR_SCALES', '[8, 16, 32]', 'ANCHOR_RATIOS', '[0.5,1,2]', 'MAX_NUM_GT_BOXES', '20']
-        elif self.dataset == "hollywood":
-            imdb_name = "hollywood_trainval"
-            imdbval_name = "hollywood_test"
-            set_cfgs = ['ANCHOR_SCALES', '[4, 8, 16, 32]', 'ANCHOR_RATIOS', '[0.5,1,2]', 'MAX_NUM_GT_BOXES', '20']
-        elif self.dataset == "scuta":
-            imdb_name = "scuta_trainval"
-            imdbval_name = "scuta_test"
-            set_cfgs = ['ANCHOR_SCALES', '[4, 8, 16, 32]', 'ANCHOR_RATIOS', '[0.5,1,2]', 'MAX_NUM_GT_BOXES', '20']
+        imdb_name, imdbval_name, set_cfgs = self.get_imdb_name(self.dataset)
 
 
         if self.cfg_file is None:
@@ -101,6 +88,64 @@ class FasterRCNN_prepare():
                                                       pin_memory=True)
 
         self.iters_per_epoch = int(self.train_size / self.batch_size_train)
+
+    def get_imdb_name(self, dataset):
+        if dataset == "pascal_voc":
+            imdb_name = "voc_2007_trainval"
+            imdbval_name = "voc_2007_test"
+            set_cfgs = ['ANCHOR_SCALES', '[4, 8, 16, 32]', 'ANCHOR_RATIOS', '[0.5,1,2]', 'MAX_NUM_GT_BOXES', '20']
+        elif dataset == "pascal_voc_0712":
+            imdb_name = "voc_2007_trainval+voc_2012_trainval"
+            imdbval_name = "voc_2007_test"
+            set_cfgs = ['ANCHOR_SCALES', '[8, 16, 32]', 'ANCHOR_RATIOS', '[0.5,1,2]', 'MAX_NUM_GT_BOXES', '20']
+        elif dataset == "hollywood":
+            imdb_name = "hollywood_trainval"
+            imdbval_name = "hollywood_test"
+            set_cfgs = ['ANCHOR_SCALES', '[4, 8, 16, 32]', 'ANCHOR_RATIOS', '[0.5,1,2]', 'MAX_NUM_GT_BOXES', '20']
+        elif dataset == "scuta":
+            imdb_name = "scuta_trainval"
+            imdbval_name = "scuta_test"
+            set_cfgs = ['ANCHOR_SCALES', '[4, 8, 16, 32]', 'ANCHOR_RATIOS', '[0.5,1,2]', 'MAX_NUM_GT_BOXES', '20']
+        return imdb_name, imdbval_name, set_cfgs
+
+
+class FasterRCNN_prepare_da(FasterRCNN_prepare):
+    def __init__(self, net, batch_size_train, src_dataset, tgt_dataset, cfg_file=None):
+        FasterRCNN_prepare.__init__(self, net, batch_size_train, src_dataset, cfg_file)
+        self.tgt_dataset = tgt_dataset
+
+    def tgt_da_forward(self):
+        tgt_imdb_name, tgt_imdbval_name, set_cfgs = self.get_imdb_name(self.tgt_dataset)
+        
+        self.tgt_imdb_train, roidb_train, ratio_list_train, ratio_index_train = combined_roidb(tgt_imdb_name)
+        self.tgt_train_size = len(roidb_train)
+        self.tgt_imdb_test, roidb_test, ratio_list_test, ratio_index_test = combined_roidb(tgt_imdbval_name, False)
+        self.tgt_imdb_test.competition_mode(on=True)
+
+
+        output_dir = self.save_dir + "/" + self.net + "/" + self.tgt_dataset
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        tgt_sampler_batch = sampler(self.tgt_train_size, self.batch_size_train)
+        tgt_dataset_train = roibatchLoader(roidb_train, ratio_list_train, ratio_index_train, self.batch_size_train, \
+                                       self.tgt_imdb_train.num_classes, training=True)
+        self.tgt_dataloader_train = torch.utils.data.DataLoader(tgt_dataset_train, batch_size=self.batch_size_train,
+                                                       sampler=tgt_sampler_batch, num_workers=1)
+
+        save_name = 'faster_rcnn_{}'.format(self.net)
+        self.tgt_num_images_test = len(self.tgt_imdb_test.image_index)
+        self.tgt_all_boxes = [[[] for _ in range(self.tgt_num_images_test)]
+                     for _ in range(self.tgt_imdb_test.num_classes)]
+        self.tgt_output_dir = get_output_dir(self.tgt_imdb_test, save_name)
+        tgt_dataset_test = roibatchLoader(roidb_test, ratio_list_test, ratio_index_test, self.batch_size_test, \
+                                      self.tgt_imdb_test.num_classes, training=False, normalize=False)
+        self.tgt_dataloader_test = torch.utils.data.DataLoader(tgt_dataset_test, batch_size=self.batch_size_test,
+                                                      shuffle=False, num_workers=1,
+                                                      pin_memory=True)
+
+        self.tgt_iters_per_epoch = int(self.tgt_train_size / self.batch_size_train)
+
 
 class sampler(Sampler):
     def __init__(self, train_size, batch_size):

@@ -49,9 +49,9 @@ class GradReverse(Function):
 # EDIT - take LogSoftmax of 1 x 1024*w*h
 # Taking feat_map output as label score.
 
-class d_cls_image(nn.Module):
+class D_cls_image(nn.Module):
   def __init__(self, beta=1, ch_in=1024, ch_out=1024, stride_1=1, padding_1=1, kernel=3):
-    super(d_cls_image, self).__init__()
+    super(D_cls_image, self).__init__()
     self.conv_image = nn.Conv2d(ch_in, ch_out, stride=stride_1, padding=padding_1, kernel_size=kernel)
     self.bn_image = nn.BatchNorm2d(ch_out)
     self.fc_1_image = nn.Linear(1, 2)
@@ -81,9 +81,9 @@ class d_cls_image(nn.Module):
 
 # pool_feat dim: N x 2048, where N may be 300.
 
-class d_cls_inst(nn.Module):
+class D_cls_inst(nn.Module):
   def __init__(self, beta=1, fc_size=2048):
-    super(d_cls_inst, self).__init__()
+    super(D_cls_inst, self).__init__()
     self.fc_1_inst = nn.Linear(fc_size, 100)
     self.fc_2_inst = nn.Linear(100, 2)
     self.relu = nn.ReLU(inplace=True)

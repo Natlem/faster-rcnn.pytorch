@@ -74,7 +74,7 @@ def main():
     device = torch.device("cuda")
 
     # Model Config
-    net = "resnet101"
+    net = "vgg16"
     pretrained = True
 
     batch_size = 1
@@ -85,7 +85,9 @@ def main():
         if frcnn_extra.net == "vgg16":
             lr = 0.01
             epochs = 20
-            fasterRCNN = vgg16(frcnn_extra.imdb_train.classes, pretrained=pretrained, class_agnostic=frcnn_extra.class_agnostic, model_path='data/pretrained_model/{}_caffe.pth'.format(net))
+            fasterRCNN = vgg16(frcnn_extra.imdb_train.classes, pretrained=pretrained,
+                               class_agnostic=frcnn_extra.class_agnostic,
+                               model_path='data/pretrained_model/{}_caffe.pth'.format(net))
         if frcnn_extra.net == "resnet101":
             lr = 0.01
             epochs = 40
