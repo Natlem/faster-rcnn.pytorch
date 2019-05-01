@@ -40,12 +40,13 @@ class _fasterRCNN(nn.Module):
         self.RCNN_roi_pool = ROIPool((cfg.POOLING_SIZE, cfg.POOLING_SIZE), 1.0/16.0)
         self.RCNN_roi_align = ROIAlign((cfg.POOLING_SIZE, cfg.POOLING_SIZE), 1.0/16.0, 0)
 
-    def forward(self, im_data, im_info, gt_boxes, num_boxes):
+    def forward(self, im_data, im_info, gt_boxes, num_boxes, is_target=False):
         batch_size = im_data.size(0)
 
         im_info = im_info.data
-        gt_boxes = gt_boxes.data
-        num_boxes = num_boxes.data
+        if not is_target:
+            gt_boxes = gt_boxes.data
+            num_boxes = num_boxes.data
 
         # feed image data to base model to obtain base feature map
         base_feat = self.RCNN_base(im_data)
@@ -54,21 +55,22 @@ class _fasterRCNN(nn.Module):
         rois, rpn_loss_cls, rpn_loss_bbox = self.RCNN_rpn(base_feat, im_info, gt_boxes, num_boxes)
 
         # if it is training phrase, then use ground trubut bboxes for refining
-        if self.training:
-            roi_data = self.RCNN_proposal_target(rois, gt_boxes, num_boxes)
-            rois, rois_label, rois_target, rois_inside_ws, rois_outside_ws = roi_data
+        if not is_target:
+            if self.training:
+                roi_data = self.RCNN_proposal_target(rois, gt_boxes, num_boxes)
+                rois, rois_label, rois_target, rois_inside_ws, rois_outside_ws = roi_data
 
-            rois_label = Variable(rois_label.view(-1).long())
-            rois_target = Variable(rois_target.view(-1, rois_target.size(2)))
-            rois_inside_ws = Variable(rois_inside_ws.view(-1, rois_inside_ws.size(2)))
-            rois_outside_ws = Variable(rois_outside_ws.view(-1, rois_outside_ws.size(2)))
-        else:
-            rois_label = None
-            rois_target = None
-            rois_inside_ws = None
-            rois_outside_ws = None
-            rpn_loss_cls = 0
-            rpn_loss_bbox = 0
+                rois_label = Variable(rois_label.view(-1).long())
+                rois_target = Variable(rois_target.view(-1, rois_target.size(2)))
+                rois_inside_ws = Variable(rois_inside_ws.view(-1, rois_inside_ws.size(2)))
+                rois_outside_ws = Variable(rois_outside_ws.view(-1, rois_outside_ws.size(2)))
+            else:
+                rois_label = None
+                rois_target = None
+                rois_inside_ws = None
+                rois_outside_ws = None
+                rpn_loss_cls = 0
+                rpn_loss_bbox = 0
 
         rois = Variable(rois)
         # do roi pooling based on predicted rois
@@ -80,6 +82,8 @@ class _fasterRCNN(nn.Module):
 
         # feed pooled features to top model
         pooled_feat = self._head_to_tail(pooled_feat)
+        if is_target:
+            return base_feat, pooled_feat
 
         # compute bbox offset
         bbox_pred = self.RCNN_bbox_pred(pooled_feat)

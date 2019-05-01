@@ -19,6 +19,7 @@ from torch.utils.data.sampler import Sampler
 import torch
 import torch.optim as optim
 import torch.nn as nn
+import torch.nn.functional as F
 import os
 import time
 
@@ -27,6 +28,10 @@ from visdom_logger.logger import VisdomLogger
 
 import functools
 from collections import OrderedDict
+
+def d_criteria(d_x, label):
+    loss = F.cross_entropy(d_x, label)
+    return loss
 
 
 
@@ -49,12 +54,14 @@ def train_eval_fasterRCNN(epochs, **kwargs):
 
     loss_acc = []
     lr = optimizer.param_groups[0]['lr']
-    d_cls_image = D_cls_image()
-    d_cls_inst = D_cls_inst()
+    d_cls_image = D_cls_image().to(cuda)
+    d_cls_inst = D_cls_inst().to(cuda)
     d_image_opt = torch.optim.SGD(d_cls_image.parameters(), lr=lr * (cfg.TRAIN.DOUBLE_BIAS + 1),
                                   weight_decay=cfg.TRAIN.WEIGHT_DECAY, momentum=cfg.TRAIN.MOMENTUM)
     d_inst_opt = torch.optim.SGD(d_cls_inst.parameters(), lr=lr * (cfg.TRAIN.DOUBLE_BIAS + 1),
                                  weight_decay=cfg.TRAIN.WEIGHT_DECAY, momentum=cfg.TRAIN.MOMENTUM)
+    d_cst_src_loss = 0
+    d_cst_tar_loss = 0
 
     for epoch in range(1, epochs + 1):
 
