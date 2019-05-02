@@ -13,7 +13,7 @@ from model.rpn.bbox_transform import bbox_transform_inv
 from model.rpn.bbox_transform import clip_boxes
 import numpy as np
 from model.roi_layers import nms
-from model.faster_rcnn.domain_adapt import D_cls_image, D_cls_inst
+from model.faster_rcnn.domain_adapt import D_cls_image, D_cls_inst, consistency_reg
 
 from torch.utils.data.sampler import Sampler
 import torch
@@ -23,15 +23,13 @@ import torch.nn.functional as F
 import os
 import time
 
-from frcnn_utils import FasterRCNN_prepare, train_frcnn, eval_frcnn, LoggerForSacred
+from frcnn_utils import FasterRCNN_prepare_da, train_frcnn, train_frcnn_da, eval_frcnn, eval_frcnn_da, LoggerForSacred
 from visdom_logger.logger import VisdomLogger
 
 import functools
 from collections import OrderedDict
 
-def d_criteria(d_x, label):
-    loss = F.cross_entropy(d_x, label)
-    return loss
+
 
 
 
@@ -64,19 +62,23 @@ def train_eval_fasterRCNN(epochs, **kwargs):
     d_cst_tar_loss = 0
 
     for epoch in range(1, epochs + 1):
-
-        total_loss = train_frcnn(frcnn_extra, cuda, model, optimizer, is_break)
+        start_steps = epoch * len(frcnn_extra.dataloader_train)
+        total_steps = epochs * len(frcnn_extra.dataloader_train)
+        total_loss = train_frcnn_da(frcnn_extra, cuda, model, optimizer, d_cls_image, d_cls_inst, d_image_opt, d_inst_opt,
+                                    start_steps, total_steps, is_break)
 
         if epoch % (frcnn_extra.lr_decay_step + 1) == 0:
             adjust_learning_rate(optimizer, frcnn_extra.lr_decay_gamma)
             lr *= frcnn_extra.lr_decay_gamma
 
-        map = eval_frcnn(frcnn_extra, cuda, model, is_break)
-        torch.save(model, "frcnn_model_{}_{}_{}_{}".format(frcnn_extra.net, epoch, map, frcnn_extra.dataset))
-        torch.save(optimizer, "frcnn_op_model_{}_{}_{}_{}".format(frcnn_extra.net, epoch, map, frcnn_extra.dataset))
+        src_map = eval_frcnn(frcnn_extra, cuda, model, is_break)
+        tar_map = eval_frcnn_da(frcnn_extra, cuda, model, is_break)
+        torch.save(model, "frcnn_da_model_{}_{}_{}_{}".format(frcnn_extra.net, epoch, tar_map, frcnn_extra.dataset))
+        torch.save(optimizer, "frcnn_da_op_model_{}_{}_{}_{}".format(frcnn_extra.net, epoch, tar_map, frcnn_extra.dataset))
         if logger is not None:
-            logger.log_scalar("pgp_target_frcnn_{}_training_loss".format(logger_id), total_loss, epoch)
-            logger.log_scalar("pgp_target_frcnn_{}_after_target_val_acc".format(logger_id), map, epoch)
+            logger.log_scalar("frcnn_da_{}_{}_training_loss".format(frcnn_extra.net, logger_id), total_loss, epoch)
+            logger.log_scalar("frcnn_da_{}_{}_src_val_acc".format(frcnn_extra.net,logger_id), src_map, epoch)
+            logger.log_scalar("frcnn_da_{}_{}_tar_val_acc".format(frcnn_extra.net, logger_id), tar_map, epoch)
         torch.cuda.empty_cache()
 
 
@@ -93,7 +95,7 @@ def main():
     pretrained = True
 
     batch_size = 1
-    frcnn_extra = FasterRCNN_prepare(net, batch_size, "scuta", "cfgs/vgg16.yml")
+    frcnn_extra = FasterRCNN_prepare_da(net, batch_size, "holly", "src" "cfgs/vgg16.yml")
     frcnn_extra.forward()
 
     if frcnn_extra.net == "vgg16":
