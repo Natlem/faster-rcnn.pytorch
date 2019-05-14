@@ -89,8 +89,9 @@ def main():
                                class_agnostic=frcnn_extra.class_agnostic,
                                model_path='data/pretrained_model/{}_caffe.pth'.format(net))
         if frcnn_extra.net == "resnet101":
-            lr = 0.01
+            lr = 0.001
             epochs = 40
+            frcnn_extra.lr_decay_step = 10
             fasterRCNN = resnet(frcnn_extra.imdb_train.classes, pretrained=pretrained,
                                class_agnostic=frcnn_extra.class_agnostic,
                                model_path='data/pretrained_model/{}_caffe.pth'.format(net))
@@ -102,8 +103,9 @@ def main():
                                class_agnostic=frcnn_extra.class_agnostic,
                                model_path='data/pretrained_model/{}_caffe.pth'.format(net))
         if frcnn_extra.net == "resnet101":
-            lr = 0.01
+            lr = 0.001
             epochs = 40
+            frcnn_extra.lr_decay_step = 10
             fasterRCNN = resnet(frcnn_extra.imdb_train.classes, pretrained=pretrained,
                                class_agnostic=frcnn_extra.class_agnostic,
                                model_path='data/pretrained_model/{}_caffe.pth'.format(net))

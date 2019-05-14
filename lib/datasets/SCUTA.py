@@ -222,11 +222,7 @@ class scuta(imdb):
         #     objs = non_diff_objs
 
         # Check for real bnbbox since Hollywood dataset xml is not all the time correct
-        num_objs = 0
-        for ix, obj in enumerate(objs):
-            bbox = obj.find('bndbox')
-            if bbox is not None:
-                num_objs += 1
+        num_objs = len(objs)
 
         boxes = np.zeros((num_objs, 4), dtype=np.uint16)
         gt_classes = np.zeros((num_objs), dtype=np.int32)

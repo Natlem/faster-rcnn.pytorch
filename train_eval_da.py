@@ -23,7 +23,7 @@ import torch.nn.functional as F
 import os
 import time
 
-from frcnn_utils import FasterRCNN_prepare_da, train_frcnn, train_frcnn_da, eval_frcnn, eval_frcnn_da, LoggerForSacred
+from frcnn_utils import FasterRCNN_prepare_da, train_frcnn, train_frcnn_da, eval_frcnn, eval_frcnn_da, LoggerForSacred, train_frcnn_da_img
 from visdom_logger.logger import VisdomLogger
 
 import functools
@@ -54,9 +54,9 @@ def train_eval_fasterRCNN(epochs, **kwargs):
     lr = optimizer.param_groups[0]['lr']
     d_cls_image = D_cls_image().to(cuda)
     d_cls_inst = D_cls_inst().to(cuda)
-    d_image_opt = torch.optim.SGD(d_cls_image.parameters(), lr=lr * (cfg.TRAIN.DOUBLE_BIAS + 1),
+    d_image_opt = torch.optim.SGD(d_cls_image.parameters(), lr=lr,
                                   weight_decay=cfg.TRAIN.WEIGHT_DECAY, momentum=cfg.TRAIN.MOMENTUM)
-    d_inst_opt = torch.optim.SGD(d_cls_inst.parameters(), lr=lr * (cfg.TRAIN.DOUBLE_BIAS + 1),
+    d_inst_opt = torch.optim.SGD(d_cls_inst.parameters(), lr=lr,
                                  weight_decay=cfg.TRAIN.WEIGHT_DECAY, momentum=cfg.TRAIN.MOMENTUM)
     d_cst_src_loss = 0
     d_cst_tar_loss = 0
@@ -64,42 +64,56 @@ def train_eval_fasterRCNN(epochs, **kwargs):
     for epoch in range(1, epochs + 1):
         start_steps = epoch * len(frcnn_extra.dataloader_train)
         total_steps = epochs * len(frcnn_extra.dataloader_train)
-        total_loss = train_frcnn_da(frcnn_extra, cuda, model, optimizer, d_cls_image, d_cls_inst, d_image_opt, d_inst_opt,
+        #total_loss, d_cst_loss, d_img_loss, d_inst_loss = train_frcnn_da_img(frcnn_extra, cuda, model, optimizer, d_cls_image, d_cls_inst, d_image_opt, d_inst_opt,
+        #                            start_steps, total_steps, is_break)
+
+        total_loss, d_cst_loss, d_img_loss, d_inst_loss = train_frcnn_da_img(frcnn_extra, cuda, model, optimizer, d_cls_image, d_image_opt,
                                     start_steps, total_steps, is_break)
 
+        print(total_loss)
         if epoch % (frcnn_extra.lr_decay_step + 1) == 0:
             adjust_learning_rate(optimizer, frcnn_extra.lr_decay_gamma)
             lr *= frcnn_extra.lr_decay_gamma
 
         src_map = eval_frcnn(frcnn_extra, cuda, model, is_break)
         tar_map = eval_frcnn_da(frcnn_extra, cuda, model, is_break)
-        torch.save(model, "frcnn_da_model_{}_{}_{}_{}".format(frcnn_extra.net, epoch, tar_map, frcnn_extra.dataset))
-        torch.save(optimizer, "frcnn_da_op_model_{}_{}_{}_{}".format(frcnn_extra.net, epoch, tar_map, frcnn_extra.dataset))
+        torch.save(model, "frcnn_da_img_model_{}_{}_{}_{}".format(frcnn_extra.net, epoch, tar_map, frcnn_extra.dataset))
+        torch.save(optimizer, "frcnn_da_img_op_model_{}_{}_{}_{}".format(frcnn_extra.net, epoch, tar_map, frcnn_extra.dataset))
         if logger is not None:
-            logger.log_scalar("frcnn_da_{}_{}_training_loss".format(frcnn_extra.net, logger_id), total_loss, epoch)
-            logger.log_scalar("frcnn_da_{}_{}_src_val_acc".format(frcnn_extra.net,logger_id), src_map, epoch)
-            logger.log_scalar("frcnn_da_{}_{}_tar_val_acc".format(frcnn_extra.net, logger_id), tar_map, epoch)
+            logger.log_scalar("frcnn_da_img_{}_{}_training_loss".format(frcnn_extra.net, logger_id), total_loss, epoch)
+            logger.log_scalar("frcnn_da_img_{}_{}_d_cst_loss".format(frcnn_extra.net, logger_id), d_cst_loss, epoch)
+            logger.log_scalar("frcnn_da_img_{}_{}_d_img_loss".format(frcnn_extra.net, logger_id), d_img_loss, epoch)
+            logger.log_scalar("frcnn_da_img_{}_{}_d_inst_loss".format(frcnn_extra.net, logger_id), d_inst_loss, epoch)
+            logger.log_scalar("frcnn_da_img_{}_{}_src_val_acc".format(frcnn_extra.net,logger_id), src_map, epoch)
+            logger.log_scalar("frcnn_da_img_{}_{}_tar_val_acc".format(frcnn_extra.net, logger_id), tar_map, epoch)
         torch.cuda.empty_cache()
 
 
     return loss_acc
 
 def main():
-    lr = 0.001
+    lr = 0.01
     momentum = 0.9
     device = torch.device("cuda")
     epochs = 20
+    #source_model_pretrained = 'frcnn_model_vgg16_2_0.7956096921947304_hollywood'
+    source_model_pretrained = 'frcnn_op_model_vgg16_9_0.8100253828043802_scuta'
+
 
     # Model Config
     net = "vgg16"
     pretrained = True
 
     batch_size = 1
-    frcnn_extra = FasterRCNN_prepare_da(net, batch_size, "holly", "src" "cfgs/vgg16.yml")
-    frcnn_extra.forward()
+    #frcnn_extra = FasterRCNN_prepare_da(net, batch_size, "hollywood", "scuta", "cfgs/vgg16.yml"
+    frcnn_extra = FasterRCNN_prepare_da(net, batch_size, "scuta", "hollywood", "cfgs/vgg16.yml")
+
+    frcnn_extra.tar_da_forward()
 
     if frcnn_extra.net == "vgg16":
-        fasterRCNN = vgg16(frcnn_extra.imdb_train.classes, pretrained=pretrained, class_agnostic=frcnn_extra.class_agnostic, model_path='data/pretrained_model/vgg16_caffe.pth')
+        fasterRCNN = vgg16(frcnn_extra.imdb_train.classes, pretrained=pretrained, class_agnostic=frcnn_extra.class_agnostic, model_path=source_model_pretrained, pth_path='')
+
+
 
     fasterRCNN.create_architecture()
     params = []

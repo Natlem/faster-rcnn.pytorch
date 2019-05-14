@@ -50,7 +50,7 @@ class GradReverse(Function):
 # Taking feat_map output as label score.
 
 class D_cls_image(nn.Module):
-  def __init__(self, beta=1, ch_in=1024, ch_out=1024, stride_1=1, padding_1=1, kernel=3):
+  def __init__(self, beta=1, ch_in=512, ch_out=512, stride_1=1, padding_1=1, kernel=3):
     super(D_cls_image, self).__init__()
     self.conv_image = nn.Conv2d(ch_in, ch_out, stride=stride_1, padding=padding_1, kernel_size=kernel)
     self.bn_image = nn.BatchNorm2d(ch_out)
@@ -58,7 +58,7 @@ class D_cls_image(nn.Module):
     self.ch_out = ch_out
     self.relu = nn.ReLU(inplace=True)
     self.maxpool = nn.MaxPool2d(kernel_size=2)
-    self.bn_2 = nn.BatchNorm1d(1024)
+    self.bn_2 = nn.BatchNorm2d(ch_out)
 
     self.beta = beta
 
@@ -66,9 +66,9 @@ class D_cls_image(nn.Module):
     x = grad_reverse(x, self.beta)
     x = self.conv_image(x)
     x = self.relu(x)
-    x = self.bn_image(x)
+    #x = self.bn_image(x)
     x = self.maxpool(x)
-    x = self.bn_2(x)
+    #x = self.bn_2(x)
 
     x = flatten(x)
     x = torch.transpose(x, 0, 1)
@@ -82,7 +82,7 @@ class D_cls_image(nn.Module):
 # pool_feat dim: N x 2048, where N may be 300.
 
 class D_cls_inst(nn.Module):
-  def __init__(self, beta=1, fc_size=2048):
+  def __init__(self, beta=1, fc_size=4096):
     super(D_cls_inst, self).__init__()
     self.fc_1_inst = nn.Linear(fc_size, 100)
     self.fc_2_inst = nn.Linear(100, 2)

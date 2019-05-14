@@ -20,7 +20,7 @@ from datasets.SCUTA import scuta
 
 import numpy as np
 
-for split in ['trainval','test']:
+for split in ['trainval','test', 'debug']:
     name = 'scuta_{}'.format(split)
     __sets[name] = (lambda split=split: scuta(split))
 

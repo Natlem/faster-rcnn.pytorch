@@ -18,6 +18,7 @@ import torch
 import os
 import time
 from model.faster_rcnn.domain_adapt import D_cls_image, D_cls_inst, consistency_reg
+import torchvision
 
 class LoggerForSacred():
     def __init__(self, visdom_logger, ex_logger=None):
@@ -101,10 +102,12 @@ class FasterRCNN_prepare():
             imdbval_name = "voc_2007_test"
             set_cfgs = ['ANCHOR_SCALES', '[8, 16, 32]', 'ANCHOR_RATIOS', '[0.5,1,2]', 'MAX_NUM_GT_BOXES', '20']
         elif dataset == "hollywood":
+            #imdb_name = "hollywood_debug"
             imdb_name = "hollywood_trainval"
             imdbval_name = "hollywood_test"
             set_cfgs = ['ANCHOR_SCALES', '[4, 8, 16, 32]', 'ANCHOR_RATIOS', '[0.5,1,2]', 'MAX_NUM_GT_BOXES', '20']
         elif dataset == "scuta":
+            #imdb_name = "scuta_debug"
             imdb_name = "scuta_trainval"
             imdbval_name = "scuta_test"
             set_cfgs = ['ANCHOR_SCALES', '[4, 8, 16, 32]', 'ANCHOR_RATIOS', '[0.5,1,2]', 'MAX_NUM_GT_BOXES', '20']
@@ -134,7 +137,7 @@ class FasterRCNN_prepare_da(FasterRCNN_prepare):
         tar_dataset_train = roibatchLoader(roidb_train, ratio_list_train, ratio_index_train, self.batch_size_train, \
                                        self.tar_imdb_train.num_classes, training=True)
         self.tar_dataloader_train = torch.utils.data.DataLoader(tar_dataset_train, batch_size=self.batch_size_train,
-                                                       sampler=tar_sampler_batch, num_workers=1)
+                                                       sampler=tar_sampler_batch, num_workers=0)
 
         save_name = 'faster_rcnn_{}'.format(self.net)
         self.tar_num_images_test = len(self.tar_imdb_test.image_index)
@@ -144,7 +147,7 @@ class FasterRCNN_prepare_da(FasterRCNN_prepare):
         tar_dataset_test = roibatchLoader(roidb_test, ratio_list_test, ratio_index_test, self.batch_size_test, \
                                       self.tar_imdb_test.num_classes, training=False, normalize=False)
         self.tar_dataloader_test = torch.utils.data.DataLoader(tar_dataset_test, batch_size=self.batch_size_test,
-                                                      shuffle=False, num_workers=1,
+                                                      shuffle=False, num_workers=0,
                                                       pin_memory=True)
 
         self.tar_iters_per_epoch = int(self.tar_train_size / self.batch_size_train)
@@ -257,6 +260,7 @@ def eval_frcnn(frcnn_extra, device, fasterRCNN, is_break=False):
         nms_time = misc_toc - misc_tic
         if is_break:
             break
+
     ap = frcnn_extra.imdb_test.evaluate_detections(frcnn_extra.all_boxes, frcnn_extra.output_dir)
     del rois
     del cls_prob
@@ -380,7 +384,14 @@ def train_frcnn_da(frcnn_extra_da, device, fasterRCNN, optimizer, d_cls_image, d
 
     src_data_iter = iter(frcnn_extra_da.dataloader_train)
     tar_data_iter = iter(frcnn_extra_da.tar_dataloader_train)
-    for step in range(frcnn_extra_da.iters_per_epoch):
+
+    if frcnn_extra_da.tar_iters_per_epoch < frcnn_extra_da.iters_per_epoch:
+        iter_per_epoch = frcnn_extra_da.tar_iters_per_epoch
+    else:
+        iter_per_epoch = frcnn_extra_da.iters_per_epoch
+
+    for step in range(iter_per_epoch):
+        tar_data = next(tar_data_iter)
         src_data = next(src_data_iter)
         src_im_data = src_data[0].to(device)
         src_im_info = src_data[1].to(device)
@@ -388,11 +399,15 @@ def train_frcnn_da(frcnn_extra_da, device, fasterRCNN, optimizer, d_cls_image, d
         src_num_boxes = src_data[3].to(device)
 
 
-        tar_data = next(tar_data_iter)
+
         tar_im_data = tar_data[0].to(device)
+
+        if tar_im_data.shape[2:] != src_im_data.shape[2:]:
+            tar_im_data = F.interpolate(tar_im_data, size=src_im_data.shape[2:]).to(device)
+
         tar_im_info = tar_data[1].to(device)
-        tar_gt_boxes = tar_data[2].to(device)
-        tar_num_boxes = tar_data[3].to(device)
+        tar_gt_boxes = None
+        tar_num_boxes = None
 
         fasterRCNN.zero_grad()
         d_cls_image.zero_grad()
@@ -468,7 +483,7 @@ def train_frcnn_da(frcnn_extra_da, device, fasterRCNN, optimizer, d_cls_image, d
     del tar_d_img_loss
     del tar_d_inst_loss
     del loss
-    return loss_temp
+    return loss_temp, d_cst_loss, d_img_loss, d_inst_loss
 
 def train_frcnn(frcnn_extra, device, fasterRCNN, optimizer, is_break=False):
 
@@ -492,6 +507,9 @@ def train_frcnn(frcnn_extra, device, fasterRCNN, optimizer, is_break=False):
 
         loss = rpn_loss_cls.mean() + rpn_loss_box.mean() \
                + RCNN_loss_cls.mean() + RCNN_loss_bbox.mean()
+        #if (torch.isnan(loss)):
+        #    print("NAN!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+
         loss_temp += float(loss.item())
         optimizer.zero_grad()
         loss.backward()
@@ -511,3 +529,96 @@ def train_frcnn(frcnn_extra, device, fasterRCNN, optimizer, is_break=False):
     del rois_label
     del loss
     return loss_temp
+
+def train_frcnn_da_img(frcnn_extra_da, device, fasterRCNN, optimizer, d_cls_image, d_image_opt,
+                   start_steps, total_steps, is_break=False):
+
+
+
+    fasterRCNN.train()
+    d_cls_image.train()
+    loss_temp = 0
+
+
+    src_data_iter = iter(frcnn_extra_da.dataloader_train)
+    tar_data_iter = iter(frcnn_extra_da.tar_dataloader_train)
+
+    if frcnn_extra_da.tar_iters_per_epoch < frcnn_extra_da.iters_per_epoch:
+        iter_per_epoch = frcnn_extra_da.tar_iters_per_epoch
+    else:
+        iter_per_epoch = frcnn_extra_da.iters_per_epoch
+
+    for step in range(iter_per_epoch):
+        tar_data = next(tar_data_iter)
+        src_data = next(src_data_iter)
+        src_im_data = src_data[0].to(device)
+        src_im_info = src_data[1].to(device)
+        src_gt_boxes = src_data[2].to(device)
+        src_num_boxes = src_data[3].to(device)
+
+
+
+        tar_im_data = tar_data[0].to(device)
+
+        if tar_im_data.shape[2:] != src_im_data.shape[2:]:
+            tar_im_data = F.interpolate(tar_im_data, size=src_im_data.shape[2:]).to(device)
+
+        tar_im_info = tar_data[1].to(device)
+        tar_gt_boxes = None
+        tar_num_boxes = None
+
+        fasterRCNN.zero_grad()
+        d_cls_image.zero_grad()
+        rois, cls_prob, bbox_pred, \
+        rpn_loss_cls, rpn_loss_box, \
+        RCNN_loss_cls, RCNN_loss_bbox, \
+        rois_label, src_feat_map, src_roi_pool = fasterRCNN(src_im_data, src_im_info, src_gt_boxes, src_num_boxes, is_target=False)
+        tar_feat_map, tar_roi_pool = fasterRCNN(tar_im_data, tar_im_info, tar_gt_boxes, tar_num_boxes, is_target=True)
+
+        p = float(step + start_steps) / total_steps
+        constant = 2. / (1. + np.exp(-10 * p)) - 1
+
+        d_cls_image.set_beta(constant)
+
+        src_d_img_score = d_cls_image(src_feat_map)
+        tar_d_img_score = d_cls_image(tar_feat_map)
+
+        s1 = list(src_d_img_score.size())[0]
+        s2 = list(tar_d_img_score.size())[0]
+
+        src_img_label = torch.zeros(s1).long().to(device)
+        tar_img_label = torch.ones(s2).long().to(device)
+
+        src_d_img_loss = d_criteria(src_d_img_score, src_img_label)
+        tar_d_img_loss = d_criteria(tar_d_img_score, tar_img_label)
+
+        d_img_loss = src_d_img_loss + tar_d_img_loss
+        src_feat_map_dim = list(src_feat_map.size())[1] * list(src_feat_map.size())[2] * list(src_feat_map.size())[3]
+        tar_feat_map_dim = list(tar_feat_map.size())[1] * list(tar_feat_map.size())[2] * list(tar_feat_map.size())[3]
+
+
+        loss = rpn_loss_cls.mean() + rpn_loss_box.mean() \
+               + RCNN_loss_cls.mean() + RCNN_loss_bbox.mean() + (0.1)*(d_img_loss.mean())
+        loss_temp += float(loss.item())
+        optimizer.zero_grad()
+        d_image_opt.zero_grad()
+        loss.backward()
+        if frcnn_extra_da.net == "vgg16":
+            clip_gradient(fasterRCNN, 10.)
+        optimizer.step()
+        d_image_opt.step()
+        if is_break:
+            break
+    loss_temp = loss_temp / frcnn_extra_da.iters_per_epoch
+    del rois
+    del cls_prob
+    del bbox_pred
+    del rpn_loss_cls
+    del rpn_loss_box
+    del RCNN_loss_cls
+    del RCNN_loss_bbox
+    del rois_label
+    del src_d_img_loss
+    del tar_d_img_loss
+    del loss
+    return loss_temp, 0, d_img_loss, 0

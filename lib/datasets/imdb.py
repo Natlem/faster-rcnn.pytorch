@@ -35,6 +35,7 @@ class imdb(object):
     self._roidb_handler = self.default_roidb
     # Use this dict for storing dataset specific config options
     self.config = {}
+    self.filename = ""
 
   @property
   def name(self):
@@ -116,13 +117,17 @@ class imdb(object):
     widths = self._get_widths()
     for i in range(num_images):
       boxes = self.roidb[i]['boxes'].copy()
-      oldx1 = boxes[:, 0].copy()
-      oldx2 = boxes[:, 2].copy()
+      oldx1 = boxes[:, 0].copy() #XMin
+      oldx2 = boxes[:, 2].copy() #XMax
       boxes[:, 0] = widths[i] - oldx2 - 1
       boxes[:, 2] = widths[i] - oldx1 - 1
-      #assert (boxes[:, 2] >= boxes[:, 0]).all()
+
       if not (boxes[:, 2] >= boxes[:, 0]).all():
-        continue
+        print("WTF")
+
+      assert (boxes[:, 2] >= boxes[:, 0]).all()
+      #if not (boxes[:, 2] >= boxes[:, 0]).all():
+      #  continue
       entry = {'boxes': boxes,
                'gt_overlaps': self.roidb[i]['gt_overlaps'],
                'gt_classes': self.roidb[i]['gt_classes'],
