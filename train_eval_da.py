@@ -70,10 +70,9 @@ def train_eval_fasterRCNN(epochs, **kwargs):
         total_loss, d_cst_loss, d_img_loss, d_inst_loss = train_frcnn_da_img(frcnn_extra, cuda, model, optimizer, d_cls_image, d_image_opt,
                                     start_steps, total_steps, is_break)
 
-        print(total_loss)
         if epoch % (frcnn_extra.lr_decay_step + 1) == 0:
             adjust_learning_rate(optimizer, frcnn_extra.lr_decay_gamma)
-            lr *= frcnn_extra.lr_decay_gamma
+            lr *= frcnn_extra.lr_dsecay_gamma
 
         src_map = eval_frcnn(frcnn_extra, cuda, model, is_break)
         tar_map = eval_frcnn_da(frcnn_extra, cuda, model, is_break)
@@ -97,7 +96,7 @@ def main():
     device = torch.device("cuda")
     epochs = 20
     #source_model_pretrained = 'frcnn_model_vgg16_2_0.7956096921947304_hollywood'
-    source_model_pretrained = 'frcnn_op_model_vgg16_9_0.8100253828043802_scuta'
+    source_model_pretrained = 'frcnn_model_vgg16_9_0.8100253828043802_scuta'
 
 
     # Model Config
@@ -106,16 +105,15 @@ def main():
 
     batch_size = 1
     #frcnn_extra = FasterRCNN_prepare_da(net, batch_size, "hollywood", "scuta", "cfgs/vgg16.yml"
-    frcnn_extra = FasterRCNN_prepare_da(net, batch_size, "scuta", "hollywood", "cfgs/vgg16.yml")
+    frcnn_extra = FasterRCNN_prepare_da(net, batch_size, "scuta", "scuta", "cfgs/vgg16.yml")
 
     frcnn_extra.tar_da_forward()
 
     if frcnn_extra.net == "vgg16":
         fasterRCNN = vgg16(frcnn_extra.imdb_train.classes, pretrained=pretrained, class_agnostic=frcnn_extra.class_agnostic, model_path=source_model_pretrained, pth_path='')
-
-
-
     fasterRCNN.create_architecture()
+    fasterRCNN = torch.load(source_model_pretrained)
+
     params = []
     for key, value in dict(fasterRCNN.named_parameters()).items():
         if value.requires_grad:
@@ -130,7 +128,7 @@ def main():
 
     logger = VisdomLogger(port=9000)
     logger = LoggerForSacred(logger)
-
+    src_map = eval_frcnn(frcnn_extra, device, fasterRCNN, False)
     train_eval_fasterRCNN(epochs, cuda=device, model=fasterRCNN, optimizer=optimizer,
                    logger=logger, frcnn_extra=frcnn_extra, is_break=False)
 

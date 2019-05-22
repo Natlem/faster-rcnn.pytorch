@@ -32,6 +32,25 @@ class LoggerForSacred():
             self.ex_logger.log_scalar(metrics_name, value, step)
 
 
+def save_state_dict(fasterRCNN, optimizer, class_agnostic, save_name):
+    save_checkpoint({
+        'model': fasterRCNN.state_dict(),
+        'optimizer': optimizer.state_dict(),
+        'pooling_mode': cfg.POOLING_MODE,
+        'class_agnostic': class_agnostic,
+    }, save_name)
+
+def save_conf(frcnn_extra, save_name):
+    f = open(save_name, 'w')
+    f.write("{}:{}\n".format('lr_decay_step', frcnn_extra.lr_decay_step))
+    f.write("{}:{}\n".format('lr_decay_gamma', frcnn_extra.lr_decay_gamma))
+    f.write("{}:{}\n".format('max_per_image', frcnn_extra.max_per_image))
+    f.write("{}:{}\n".format('class_agnostic', frcnn_extra.class_agnostic))
+    f.write("{}:{}\n".format('dataset', frcnn_extra.dataset))
+    f.write("{}:{}\n".format('net', frcnn_extra.net))
+    f.write("{}:{}\n".format('batch_size_train', frcnn_extra.batch_size_train))
+    f.close()
+
 
 class FasterRCNN_prepare():
     def __init__(self, net, batch_size_train, dataset, cfg_file=None):
@@ -50,7 +69,7 @@ class FasterRCNN_prepare():
 
 
 
-    def forward(self):
+    def forward(self, is_training=True):
         imdb_name, imdbval_name, set_cfgs = self.get_imdb_name(self.dataset)
 
 
@@ -65,21 +84,27 @@ class FasterRCNN_prepare():
         cfg.CUDA = True
         cfg.USE_GPU_NMS = True
 
-        self.imdb_train, roidb_train, ratio_list_train, ratio_index_train = combined_roidb(imdb_name)
-        self.train_size = len(roidb_train)
-        self.imdb_test, roidb_test, ratio_list_test, ratio_index_test = combined_roidb(imdbval_name, False)
-        self.imdb_test.competition_mode(on=True)
-
         output_dir = self.save_dir + "/" + self.net + "/" + self.dataset
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
-
-        sampler_batch = sampler(self.train_size, self.batch_size_train)
-        dataset_train = roibatchLoader(roidb_train, ratio_list_train, ratio_index_train, self.batch_size_train, \
-                                       self.imdb_train.num_classes, training=True)
-        self.dataloader_train = torch.utils.data.DataLoader(dataset_train, batch_size=self.batch_size_train,
-                                                       sampler=sampler_batch, num_workers=1)
         save_name = 'faster_rcnn_{}'.format(self.net)
+
+        if is_training:
+            self.imdb_train, roidb_train, ratio_list_train, ratio_index_train = combined_roidb(imdb_name)
+            self.train_size = len(roidb_train)
+
+
+
+
+            sampler_batch = sampler(self.train_size, self.batch_size_train)
+            dataset_train = roibatchLoader(roidb_train, ratio_list_train, ratio_index_train, self.batch_size_train, \
+                                           self.imdb_train.num_classes, training=True)
+            self.dataloader_train = torch.utils.data.DataLoader(dataset_train, batch_size=self.batch_size_train,
+                                                           sampler=sampler_batch, num_workers=0)
+            self.iters_per_epoch = int(self.train_size / self.batch_size_train)
+
+        self.imdb_test, roidb_test, ratio_list_test, ratio_index_test = combined_roidb(imdbval_name, False)
+        self.imdb_test.competition_mode(on=True)
         self.num_images_test = len(self.imdb_test.image_index)
         self.all_boxes = [[[] for _ in range(self.num_images_test)]
                      for _ in range(self.imdb_test.num_classes)]
@@ -87,10 +112,10 @@ class FasterRCNN_prepare():
         dataset_test = roibatchLoader(roidb_test, ratio_list_test, ratio_index_test, self.batch_size_test, \
                                       self.imdb_test.num_classes, training=False, normalize=False)
         self.dataloader_test = torch.utils.data.DataLoader(dataset_test, batch_size=self.batch_size_test,
-                                                      shuffle=False, num_workers=1,
+                                                      shuffle=False, num_workers=0,
                                                       pin_memory=True)
 
-        self.iters_per_epoch = int(self.train_size / self.batch_size_train)
+
 
     def get_imdb_name(self, dataset):
         if dataset == "pascal_voc":
@@ -111,6 +136,12 @@ class FasterRCNN_prepare():
             imdb_name = "scuta_trainval"
             imdbval_name = "scuta_test"
             set_cfgs = ['ANCHOR_SCALES', '[4, 8, 16, 32]', 'ANCHOR_RATIOS', '[0.5,1,2]', 'MAX_NUM_GT_BOXES', '20']
+        elif dataset == "scuta_ori":
+            #imdb_name = "scuta_ori_debug"
+            imdb_name = "scuta_ori_trainval"
+            imdbval_name = "scuta_ori_test"
+            set_cfgs = ['ANCHOR_SCALES', '[4, 8, 16, 32]', 'ANCHOR_RATIOS', '[0.5,1,2]', 'MAX_NUM_GT_BOXES', '20']
+
         return imdb_name, imdbval_name, set_cfgs
 
 
@@ -455,8 +486,9 @@ def train_frcnn_da(frcnn_extra_da, device, fasterRCNN, optimizer, d_cls_image, d
 
         d_cst_loss = src_d_cst_loss + tar_d_cst_loss
 
-        loss = rpn_loss_cls.mean() + rpn_loss_box.mean() \
-               + RCNN_loss_cls.mean() + RCNN_loss_bbox.mean() + (0.1)*(d_img_loss.mean() + d_inst_loss.mean() + d_cst_loss.mean())
+        s_loss = rpn_loss_cls.mean() + rpn_loss_box.mean() \
+               + RCNN_loss_cls.mean() + RCNN_loss_bbox.mean()
+        loss= 0 * s_loss + (0.1)*(d_img_loss.mean() + d_inst_loss.mean() + d_cst_loss.mean())
         loss_temp += float(loss.item())
         optimizer.zero_grad()
         d_inst_opt.zero_grad()
@@ -596,9 +628,9 @@ def train_frcnn_da_img(frcnn_extra_da, device, fasterRCNN, optimizer, d_cls_imag
         src_feat_map_dim = list(src_feat_map.size())[1] * list(src_feat_map.size())[2] * list(src_feat_map.size())[3]
         tar_feat_map_dim = list(tar_feat_map.size())[1] * list(tar_feat_map.size())[2] * list(tar_feat_map.size())[3]
 
-
-        loss = rpn_loss_cls.mean() + rpn_loss_box.mean() \
-               + RCNN_loss_cls.mean() + RCNN_loss_bbox.mean() + (0.1)*(d_img_loss.mean())
+        s_loss = rpn_loss_cls.mean() + rpn_loss_box.mean() \
+               + RCNN_loss_cls.mean() + RCNN_loss_bbox.mean()
+        loss=  s_loss + (0.1)*(d_img_loss.mean())
         loss_temp += float(loss.item())
         optimizer.zero_grad()
         d_image_opt.zero_grad()

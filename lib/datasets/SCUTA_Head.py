@@ -23,7 +23,7 @@ import pickle
 from .imdb import imdb
 from .imdb import ROOT_DIR
 from . import ds_utils
-from .SCUTA_eval import scuta_eval
+from .SCUTA_eval_head import scuta_eval
 
 # TODO: make fast_rcnn irrelevant
 # >>>> obsolete, because it depends on sth outside of this project
@@ -38,15 +38,15 @@ except NameError:
 # <<<< obsolete
 
 
-class scuta(imdb):
+class scuta_head(imdb):
     def __init__(self, image_set, devkit_path=None):
-        imdb.__init__(self, 'SCUTA_ORI' + '_' + image_set)
+        imdb.__init__(self, 'SCUTA' + '_' + image_set)
         self._image_set = image_set
         self._devkit_path = self._get_default_path() if devkit_path is None \
             else devkit_path
         self._data_path = os.path.join(self._devkit_path)
         self._classes = ('__background__',  # always index 0
-                         'person')
+                         'head')
         self._class_to_ind = dict(zip(self.classes, xrange(self.num_classes)))
         self._image_ext = '.jpg'
         self._image_index = self._load_image_set_index()
@@ -109,7 +109,7 @@ class scuta(imdb):
         """
         Return the default path where PASCAL VOC is expected to be installed.
         """
-        return os.path.join(cfg.DATA_DIR, 'SCUTA_ORI')
+        return os.path.join(cfg.DATA_DIR, 'SCUTA')
 
     def gt_roidb(self):
         """

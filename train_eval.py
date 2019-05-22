@@ -21,7 +21,7 @@ import torch.nn as nn
 import os
 import time
 
-from frcnn_utils import FasterRCNN_prepare, train_frcnn, eval_frcnn, LoggerForSacred
+from frcnn_utils import FasterRCNN_prepare, train_frcnn, eval_frcnn, LoggerForSacred, save_state_dict, save_conf
 from visdom_logger.logger import VisdomLogger
 
 import functools
@@ -58,8 +58,10 @@ def train_eval_fasterRCNN(epochs, **kwargs):
             lr *= frcnn_extra.lr_decay_gamma
 
         map = eval_frcnn(frcnn_extra, cuda, model, is_break)
-        torch.save(model, "frcnn_model_{}_{}_{}_{}".format(frcnn_extra.net, epoch, map, frcnn_extra.dataset))
-        torch.save(optimizer, "frcnn_op_model_{}_{}_{}_{}".format(frcnn_extra.net, epoch, map, frcnn_extra.dataset))
+        torch.save(model, "{}/frcnn_model_{}_{}_{}_{}_head".format("all_saves", frcnn_extra.net, epoch, map, frcnn_extra.dataset))
+        torch.save(optimizer, "{}/frcnn_op_model_{}_{}_{}_{}_head".format("all_saves",frcnn_extra.net, epoch, map, frcnn_extra.dataset))
+        save_state_dict(model, optimizer, frcnn_extra.class_agnostic, "{}/frcnn_pth_{}_{}_{}_{}_head".format("all_saves",frcnn_extra.net, epoch, map, frcnn_extra.dataset))
+        save_conf(frcnn_extra, "{}/frcnn_conf_{}_{}_{}_{}_head".format("all_saves",frcnn_extra.net, epoch, map, frcnn_extra.dataset))
         if logger is not None:
             logger.log_scalar("frcnn_{}_{}_training_loss".format(frcnn_extra.net, logger_id), total_loss, epoch)
             logger.log_scalar("frcnn_{}_{}_target_val_acc".format(frcnn_extra.net, logger_id), map, epoch)
@@ -74,41 +76,42 @@ def main():
     device = torch.device("cuda")
 
     # Model Config
-    net = "resnet101"
+    net = "vgg16"
     pretrained = True
 
     batch_size = 1
     frcnn_extra = FasterRCNN_prepare(net, batch_size, "hollywood", "cfgs/{}.yml".format(net))
     frcnn_extra.forward()
 
-    if frcnn_extra.dataset == 'scuta':
+
+    if frcnn_extra.dataset == 'scuta' or frcnn_extra.dataset == 'scuta_ori':
         if frcnn_extra.net == "vgg16":
             lr = 0.01
             epochs = 20
             fasterRCNN = vgg16(frcnn_extra.imdb_train.classes, pretrained=pretrained,
                                class_agnostic=frcnn_extra.class_agnostic,
-                               model_path='data/pretrained_model/{}_caffe.pth'.format(net))
+                               pth_path='data/pretrained_model/{}_caffe.pth'.format(net))
         if frcnn_extra.net == "resnet101":
             lr = 0.001
             epochs = 40
             frcnn_extra.lr_decay_step = 10
             fasterRCNN = resnet(frcnn_extra.imdb_train.classes, pretrained=pretrained,
                                class_agnostic=frcnn_extra.class_agnostic,
-                               model_path='data/pretrained_model/{}_caffe.pth'.format(net))
+                               pth_path='data/pretrained_model/{}_caffe.pth'.format(net))
     elif frcnn_extra.dataset == 'hollywood':
         if frcnn_extra.net == "vgg16":
             lr = 0.01
             epochs = 20
             fasterRCNN = vgg16(frcnn_extra.imdb_train.classes, pretrained=pretrained,
                                class_agnostic=frcnn_extra.class_agnostic,
-                               model_path='data/pretrained_model/{}_caffe.pth'.format(net))
+                               pth_path='data/pretrained_model/{}_caffe.pth'.format(net))
         if frcnn_extra.net == "resnet101":
             lr = 0.001
             epochs = 40
             frcnn_extra.lr_decay_step = 10
             fasterRCNN = resnet(frcnn_extra.imdb_train.classes, pretrained=pretrained,
                                class_agnostic=frcnn_extra.class_agnostic,
-                               model_path='data/pretrained_model/{}_caffe.pth'.format(net))
+                               pth_path='data/pretrained_model/{}_caffe.pth'.format(net))
 
     fasterRCNN.create_architecture()
     params = []
