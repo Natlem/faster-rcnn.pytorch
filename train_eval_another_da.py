@@ -80,7 +80,7 @@ def main():
     momentum = 0.9
     device = torch.device("cuda")
     epochs = 20
-    alpha = 1
+    alpha = 0.1
     #source_model_pretrained = 'frcnn_model_vgg16_2_0.7956096921947304_hollywood'
     #source_model_pretrained = 'frcnn_model_vgg16_9_0.8100253828043802_scuta'
     pth_path = "all_saves/frcnn_pth_vgg16_9_0.8101311655030617_scuta"

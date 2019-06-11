@@ -156,7 +156,7 @@ class FasterRCNN_prepare():
             imdbval_name = "hollywood_test"
             set_cfgs = ['ANCHOR_SCALES', '[4, 8, 16, 32]', 'ANCHOR_RATIOS', '[0.5,1,2]', 'MAX_NUM_GT_BOXES', '20']
         elif dataset == "scuta":
-            imdb_name = "scuta_trainval"
+            imdb_name = "scuta_500_trainval"
             if self.debug:
                 imdb_name = "scuta_debug"
             imdbval_name = "scuta_test"
