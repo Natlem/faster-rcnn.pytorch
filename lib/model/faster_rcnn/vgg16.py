@@ -29,6 +29,34 @@ class vgg16(_fasterRCNN):
   def _init_modules(self):
     vgg = models.vgg16()
 
+
+    if self.pretrained and self.model_path == "":
+        print("Loading pretrained weights from %s" % (self.pth_path))
+        state_dict = torch.load(self.pth_path)
+        vgg.load_state_dict({k:v for k,v in state_dict.items() if k in vgg.state_dict()})
+
+
+    vgg.classifier = nn.Sequential(*list(vgg.classifier._modules.values())[:-1])
+
+    # not using the last maxpool layer
+    self.RCNN_base = nn.Sequential(*list(vgg.features._modules.values())[:-1])
+
+    # Fix the layers before conv3:
+    for layer in range(10):
+      for p in self.RCNN_base[layer].parameters(): p.requires_grad = False
+
+    # self.RCNN_base = _RCNN_base(vgg.features, self.classes, self.dout_base_model)
+
+    self.RCNN_top = vgg.classifier
+
+    # not using the last maxpool layer
+    self.RCNN_cls_score = nn.Linear(4096, self.n_classes)
+
+    if self.class_agnostic:
+      self.RCNN_bbox_pred = nn.Linear(4096, 4)
+    else:
+      self.RCNN_bbox_pred = nn.Linear(4096, 4 * self.n_classes)
+
     if self.pretrained and self.model_path != "":
         print("Loading pretrained model from %s" % (self.model_path))
         vgg = torch.load(self.model_path)
@@ -38,33 +66,6 @@ class vgg16(_fasterRCNN):
         self.RCNN_top = vgg.RCNN_top
         self.RCNN_cls_score = vgg.RCNN_cls_score
         self.RCNN_bbox_pred = vgg.RCNN_bbox_pred
-
-    elif self.pretrained and self.model_path == "":
-        print("Loading pretrained weights from %s" % (self.pth_path))
-        state_dict = torch.load(self.pth_path)
-        vgg.load_state_dict({k:v for k,v in state_dict.items() if k in vgg.state_dict()})
-
-
-        vgg.classifier = nn.Sequential(*list(vgg.classifier._modules.values())[:-1])
-
-        # not using the last maxpool layer
-        self.RCNN_base = nn.Sequential(*list(vgg.features._modules.values())[:-1])
-
-        # Fix the layers before conv3:
-        for layer in range(10):
-          for p in self.RCNN_base[layer].parameters(): p.requires_grad = False
-
-        # self.RCNN_base = _RCNN_base(vgg.features, self.classes, self.dout_base_model)
-
-        self.RCNN_top = vgg.classifier
-
-        # not using the last maxpool layer
-        self.RCNN_cls_score = nn.Linear(4096, self.n_classes)
-
-        if self.class_agnostic:
-          self.RCNN_bbox_pred = nn.Linear(4096, 4)
-        else:
-          self.RCNN_bbox_pred = nn.Linear(4096, 4 * self.n_classes)
 
   def _head_to_tail(self, pool5):
     

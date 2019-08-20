@@ -72,6 +72,9 @@ def train_frcnn_da(alpha, frcnn_extra_ada, device, fasterRCNN, optimizer, is_bre
     else:
         iters_per_epoch = frcnn_extra_ada.s_iters_per_epoch
 
+    s_tt_base_feat = None
+    t_tt_base_feat = None
+
     for step in range(iters_per_epoch):
 
         if step == frcnn_extra_ada.s_iters_per_epoch:
@@ -98,9 +101,20 @@ def train_frcnn_da(alpha, frcnn_extra_ada, device, fasterRCNN, optimizer, is_bre
         rpn_loss_cls, rpn_loss_box, \
         RCNN_loss_cls, RCNN_loss_bbox, \
         rois_label, DA_img_loss_cls, DA_ins_loss_cls, tgt_DA_img_loss_cls, tgt_DA_ins_loss_cls, \
-        DA_cst_loss, tgt_DA_cst_loss = \
+        DA_cst_loss, tgt_DA_cst_loss, base_feat, tgt_base_feat, pooled_feat, tgt_pooled_feat = \
             fasterRCNN.forward_da(src_im_data, src_im_info, src_gt_boxes, src_num_boxes, src_need_backprop,
                        tgt_im_data, tgt_im_info, tgt_gt_boxes, tgt_num_boxes, tgt_need_backprop)
+
+        if s_tt_base_feat is None:
+            s_tt_base_feat = base_feat
+        else:
+            s_tt_base_feat += base_feat
+
+        if t_tt_base_feat is None:
+            t_tt_base_feat = tgt_base_feat
+        else:
+            t_tt_base_feat += tgt_base_feat
+
 
         s_loss = rpn_loss_cls.mean() + rpn_loss_box.mean() \
                + RCNN_loss_cls.mean() + RCNN_loss_bbox.mean()

@@ -217,7 +217,7 @@ def eval_frcnn(frcnn_extra, device, fasterRCNN, is_break=False):
         rois, cls_prob, bbox_pred, \
         rpn_loss_cls, rpn_loss_box, \
         RCNN_loss_cls, RCNN_loss_bbox, \
-        rois_label = fasterRCNN(im_data, im_info, gt_boxes, num_boxes)
+        rois_label, _, _ = fasterRCNN(im_data, im_info, gt_boxes, num_boxes)
 
         scores = cls_prob.data
         boxes = rois.data[:, :, 1:5]
