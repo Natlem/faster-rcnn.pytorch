@@ -38,13 +38,13 @@ def train_eval_fasterRCNN(epochs, **kwargs):
     cuda = kwargs["cuda"]
 
     logger = kwargs["logger"]
-    logger_id = frcnn_extra.dataset
+    logger_id = frcnn_extra.s_dataset
 
     is_break = False
     if "is_break" in kwargs and kwargs["is_break"]:
         is_break = True
 
-    kwargs["train_loader"] = frcnn_extra.dataloader_train
+    kwargs["train_loader"] = frcnn_extra.s_dataloader_train
 
     loss_acc = []
     lr = optimizer.param_groups[0]['lr']
@@ -58,10 +58,10 @@ def train_eval_fasterRCNN(epochs, **kwargs):
             lr *= frcnn_extra.lr_decay_gamma
 
         map = eval_frcnn(frcnn_extra, cuda, model, is_break)
-        torch.save(model, "{}/frcnn_model_{}_{}_{}_{}_head".format("all_saves", frcnn_extra.net, epoch, map, frcnn_extra.dataset))
-        torch.save(optimizer, "{}/frcnn_op_model_{}_{}_{}_{}_head".format("all_saves",frcnn_extra.net, epoch, map, frcnn_extra.dataset))
+        torch.save(model, "{}/frcnn_model_{}_{}_{}_{}".format("all_saves", frcnn_extra.net, epoch, map, frcnn_extra.dataset))
+        torch.save(optimizer, "{}/frcnn_op_model_{}_{}_{}_{}".format("all_saves",frcnn_extra.net, epoch, map, frcnn_extra.dataset))
         save_state_dict(model, optimizer, frcnn_extra.class_agnostic, "{}/frcnn_pth_{}_{}_{}_{}_head".format("all_saves",frcnn_extra.net, epoch, map, frcnn_extra.dataset))
-        save_conf(frcnn_extra, "{}/frcnn_conf_{}_{}_{}_{}_head".format("all_saves",frcnn_extra.net, epoch, map, frcnn_extra.dataset))
+        save_conf(frcnn_extra, "{}/frcnn_conf_{}_{}_{}_{}".format("all_saves",frcnn_extra.net, epoch, map, frcnn_extra.dataset))
         if logger is not None:
             logger.log_scalar("frcnn_{}_{}_training_loss".format(frcnn_extra.net, logger_id), total_loss, epoch)
             logger.log_scalar("frcnn_{}_{}_target_val_acc".format(frcnn_extra.net, logger_id), map, epoch)
@@ -80,15 +80,29 @@ def main():
     pretrained = True
 
     batch_size = 1
-    frcnn_extra = FasterRCNN_prepare(net, batch_size, "hollywood", "cfgs/{}.yml".format(net))
+    frcnn_extra = FasterRCNN_prepare(net, batch_size, "pascal_voc_person", "cfgs/{}.yml".format(net))
     frcnn_extra.forward()
 
 
-    if frcnn_extra.dataset == 'scuta' or frcnn_extra.dataset == 'scuta_ori':
+    if frcnn_extra.s_dataset == 'scuta' or frcnn_extra.s_dataset == 'scuta_ori':
         if frcnn_extra.net == "vgg16":
             lr = 0.01
             epochs = 20
-            fasterRCNN = vgg16(frcnn_extra.imdb_train.classes, pretrained=pretrained,
+            fasterRCNN = vgg16(frcnn_extra.s_imdb_train.classes, pretrained=pretrained,
+                               class_agnostic=frcnn_extra.class_agnostic,
+                               pth_path='data/pretrained_model/{}_caffe.pth'.format(net))
+        if frcnn_extra.net == "resnet101":
+            lr = 0.001
+            epochs = 40
+            frcnn_extra.lr_decay_step = 10
+            fasterRCNN = resnet(frcnn_extra.s_imdb_train.classes, pretrained=pretrained,
+                               class_agnostic=frcnn_extra.class_agnostic,
+                               pth_path='data/pretrained_model/{}_caffe.pth'.format(net))
+    elif frcnn_extra.s_dataset == 'hollywood':
+        if frcnn_extra.net == "vgg16":
+            lr = 0.01
+            epochs = 20
+            fasterRCNN = vgg16(frcnn_extra.s_imdb_train.classes, pretrained=pretrained,
                                class_agnostic=frcnn_extra.class_agnostic,
                                pth_path='data/pretrained_model/{}_caffe.pth'.format(net))
         if frcnn_extra.net == "resnet101":
@@ -98,20 +112,36 @@ def main():
             fasterRCNN = resnet(frcnn_extra.imdb_train.classes, pretrained=pretrained,
                                class_agnostic=frcnn_extra.class_agnostic,
                                pth_path='data/pretrained_model/{}_caffe.pth'.format(net))
-    elif frcnn_extra.dataset == 'hollywood':
+    elif frcnn_extra.s_dataset == 'pascal_voc_person':
         if frcnn_extra.net == "vgg16":
             lr = 0.01
             epochs = 20
-            fasterRCNN = vgg16(frcnn_extra.imdb_train.classes, pretrained=pretrained,
+            fasterRCNN = vgg16(frcnn_extra.s_imdb_train.classes, pretrained=pretrained,
                                class_agnostic=frcnn_extra.class_agnostic,
                                pth_path='data/pretrained_model/{}_caffe.pth'.format(net))
         if frcnn_extra.net == "resnet101":
             lr = 0.001
-            epochs = 40
+            epochs = 10
             frcnn_extra.lr_decay_step = 10
-            fasterRCNN = resnet(frcnn_extra.imdb_train.classes, pretrained=pretrained,
+            fasterRCNN = resnet(frcnn_extra.s_imdb_train.classes, pretrained=pretrained,
                                class_agnostic=frcnn_extra.class_agnostic,
                                pth_path='data/pretrained_model/{}_caffe.pth'.format(net))
+
+    elif frcnn_extra.s_dataset == 'pascal_voc':
+        if frcnn_extra.net == "vgg16":
+            lr = 0.01
+            epochs = 20
+            fasterRCNN = vgg16(frcnn_extra.s_imdb_train.classes, pretrained=pretrained,
+                               class_agnostic=frcnn_extra.class_agnostic,
+                               pth_path='data/pretrained_model/{}_caffe.pth'.format(net))
+        if frcnn_extra.net == "resnet101":
+            lr = 0.001
+            epochs = 10
+            frcnn_extra.lr_decay_step = 10
+            fasterRCNN = resnet(frcnn_extra.s_imdb_train.classes, pretrained=pretrained,
+                               class_agnostic=frcnn_extra.class_agnostic,
+                               pth_path='data/pretrained_model/{}_caffe.pth'.format(net))
+
 
     fasterRCNN.create_architecture()
     params = []
@@ -126,7 +156,7 @@ def main():
     optimizer = torch.optim.SGD(params, momentum=momentum, lr=lr)
     fasterRCNN = fasterRCNN.to(device)
 
-    logger = VisdomLogger(port=9000)
+    logger = VisdomLogger(port=10999)
     logger = LoggerForSacred(logger)
 
     train_eval_fasterRCNN(epochs, cuda=device, model=fasterRCNN, optimizer=optimizer,
