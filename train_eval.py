@@ -58,10 +58,10 @@ def train_eval_fasterRCNN(epochs, **kwargs):
             lr *= frcnn_extra.lr_decay_gamma
 
         map = eval_frcnn(frcnn_extra, cuda, model, is_break)
-        torch.save(model, "{}/frcnn_model_{}_{}_{}_{}".format("all_saves", frcnn_extra.net, epoch, map, frcnn_extra.dataset))
-        torch.save(optimizer, "{}/frcnn_op_model_{}_{}_{}_{}".format("all_saves",frcnn_extra.net, epoch, map, frcnn_extra.dataset))
-        save_state_dict(model, optimizer, frcnn_extra.class_agnostic, "{}/frcnn_pth_{}_{}_{}_{}_head".format("all_saves",frcnn_extra.net, epoch, map, frcnn_extra.dataset))
-        save_conf(frcnn_extra, "{}/frcnn_conf_{}_{}_{}_{}".format("all_saves",frcnn_extra.net, epoch, map, frcnn_extra.dataset))
+        torch.save(model, "{}/frcnn_model_{}_{}_{}_{}".format("all_saves", frcnn_extra.net, epoch, map, frcnn_extra.s_dataset))
+        torch.save(optimizer, "{}/frcnn_op_model_{}_{}_{}_{}".format("all_saves",frcnn_extra.net, epoch, map, frcnn_extra.s_dataset))
+        save_state_dict(model, optimizer, frcnn_extra.class_agnostic, "{}/frcnn_pth_{}_{}_{}_{}_head".format("all_saves",frcnn_extra.net, epoch, map, frcnn_extra.s_dataset))
+        save_conf(frcnn_extra, "{}/frcnn_conf_{}_{}_{}_{}".format("all_saves",frcnn_extra.net, epoch, map, frcnn_extra.s_dataset))
         if logger is not None:
             logger.log_scalar("frcnn_{}_{}_training_loss".format(frcnn_extra.net, logger_id), total_loss, epoch)
             logger.log_scalar("frcnn_{}_{}_target_val_acc".format(frcnn_extra.net, logger_id), map, epoch)
@@ -76,7 +76,7 @@ def main():
     device = torch.device("cuda")
 
     # Model Config
-    net = "vgg16"
+    net = "resnet101"
     pretrained = True
 
     batch_size = 1

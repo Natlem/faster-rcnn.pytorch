@@ -218,45 +218,77 @@ def resnet152(pretrained=False):
   return model
 
 class resnet(_fasterRCNN):
-  def __init__(self, classes, num_layers=101, pretrained=False, class_agnostic=False, model_path='data/pretrained_model/resnet101_caffe.pth'):
+  def __init__(self, classes, num_layers=101, pretrained=False, class_agnostic=False, model_path="", pth_path='data/pretrained_model/resnet101_caffe.pth'):
     self.model_path = model_path
     self.dout_base_model = 1024
     self.pretrained = pretrained
     self.class_agnostic = class_agnostic
+    self.pth_path = pth_path
 
     _fasterRCNN.__init__(self, classes, class_agnostic)
 
   def _init_modules(self):
     resnet = resnet101()
 
-    if self.pretrained == True:
-      print("Loading pretrained weights from %s" %(self.model_path))
-      state_dict = torch.load(self.model_path)
+    if self.pretrained and self.model_path != "":
+      resnet = torch.load(self.model_path)
+      self.RCNN_base = resnet.RCNN_base
+      self.RCNN_top = resnet.RCNN_top
+      self.RCNN_cls_score = resnet.RCNN_cls_score
+      self.RCNN_bbox_pred = resnet.RCNN_bbox_pred
+
+    elif self.pretrained and self.pth_path != "":
+      print("Loading pretrained weights from %s" %(self.pth_path))
+      state_dict = torch.load(self.pth_path)
       resnet.load_state_dict({k:v for k,v in state_dict.items() if k in resnet.state_dict()})
 
-    # Build resnet.
-    self.RCNN_base = nn.Sequential(resnet.conv1, resnet.bn1,resnet.relu,
-      resnet.maxpool,resnet.layer1,resnet.layer2,resnet.layer3)
+      # Build resnet.
+      self.RCNN_base = nn.Sequential(resnet.conv1, resnet.bn1,resnet.relu,
+        resnet.maxpool,resnet.layer1,resnet.layer2,resnet.layer3)
 
-    self.RCNN_top = nn.Sequential(resnet.layer4)
+      self.RCNN_top = nn.Sequential(resnet.layer4)
 
-    self.RCNN_cls_score = nn.Linear(2048, self.n_classes)
-    if self.class_agnostic:
-      self.RCNN_bbox_pred = nn.Linear(2048, 4)
+      self.RCNN_cls_score = nn.Linear(2048, self.n_classes)
+      if self.class_agnostic:
+        self.RCNN_bbox_pred = nn.Linear(2048, 4)
+      else:
+        self.RCNN_bbox_pred = nn.Linear(2048, 4 * self.n_classes)
+
+      # Fix blocks
+      for p in self.RCNN_base[0].parameters(): p.requires_grad=False
+      for p in self.RCNN_base[1].parameters(): p.requires_grad=False
+
+      assert (0 <= cfg.RESNET.FIXED_BLOCKS < 4)
+      if cfg.RESNET.FIXED_BLOCKS >= 3:
+        for p in self.RCNN_base[6].parameters(): p.requires_grad=False
+      if cfg.RESNET.FIXED_BLOCKS >= 2:
+        for p in self.RCNN_base[5].parameters(): p.requires_grad=False
+      if cfg.RESNET.FIXED_BLOCKS >= 1:
+        for p in self.RCNN_base[4].parameters(): p.requires_grad=False
     else:
-      self.RCNN_bbox_pred = nn.Linear(2048, 4 * self.n_classes)
+       # Build resnet.
+      self.RCNN_base = nn.Sequential(resnet.conv1, resnet.bn1,resnet.relu,
+        resnet.maxpool,resnet.layer1,resnet.layer2,resnet.layer3)
 
-    # Fix blocks
-    for p in self.RCNN_base[0].parameters(): p.requires_grad=False
-    for p in self.RCNN_base[1].parameters(): p.requires_grad=False
+      self.RCNN_top = nn.Sequential(resnet.layer4)
 
-    assert (0 <= cfg.RESNET.FIXED_BLOCKS < 4)
-    if cfg.RESNET.FIXED_BLOCKS >= 3:
-      for p in self.RCNN_base[6].parameters(): p.requires_grad=False
-    if cfg.RESNET.FIXED_BLOCKS >= 2:
-      for p in self.RCNN_base[5].parameters(): p.requires_grad=False
-    if cfg.RESNET.FIXED_BLOCKS >= 1:
-      for p in self.RCNN_base[4].parameters(): p.requires_grad=False
+      self.RCNN_cls_score = nn.Linear(2048, self.n_classes)
+      if self.class_agnostic:
+        self.RCNN_bbox_pred = nn.Linear(2048, 4)
+      else:
+        self.RCNN_bbox_pred = nn.Linear(2048, 4 * self.n_classes)
+
+      # Fix blocks
+      for p in self.RCNN_base[0].parameters(): p.requires_grad=False
+      for p in self.RCNN_base[1].parameters(): p.requires_grad=False
+
+      assert (0 <= cfg.RESNET.FIXED_BLOCKS < 4)
+      if cfg.RESNET.FIXED_BLOCKS >= 3:
+        for p in self.RCNN_base[6].parameters(): p.requires_grad=False
+      if cfg.RESNET.FIXED_BLOCKS >= 2:
+        for p in self.RCNN_base[5].parameters(): p.requires_grad=False
+      if cfg.RESNET.FIXED_BLOCKS >= 1:
+        for p in self.RCNN_base[4].parameters(): p.requires_grad=False
 
     def set_bn_fix(m):
       classname = m.__class__.__name__

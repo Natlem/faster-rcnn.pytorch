@@ -47,7 +47,7 @@ def save_conf(frcnn_extra, save_name):
     f.write("{}:{}\n".format('lr_decay_gamma', frcnn_extra.lr_decay_gamma))
     f.write("{}:{}\n".format('max_per_image', frcnn_extra.max_per_image))
     f.write("{}:{}\n".format('class_agnostic', frcnn_extra.class_agnostic))
-    f.write("{}:{}\n".format('dataset', frcnn_extra.dataset))
+    f.write("{}:{}\n".format('dataset', frcnn_extra.s_dataset))
     f.write("{}:{}\n".format('net', frcnn_extra.net))
     f.write("{}:{}\n".format('batch_size_train', frcnn_extra.batch_size_train))
     f.close()
