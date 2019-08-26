@@ -29,10 +29,6 @@ from visdom_logger.logger import VisdomLogger
 import functools
 from collections import OrderedDict
 
-
-
-
-
 def train_eval_fasterRCNN(epochs, **kwargs):
 
     frcnn_extra = kwargs["frcnn_extra"]

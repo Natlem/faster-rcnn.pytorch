@@ -21,54 +21,49 @@ import torch.nn as nn
 import os
 import time
 
-from frcnn_utils import FasterRCNN_prepare, train_frcnn, eval_frcnn, LoggerForSacred, save_state_dict, save_conf
+from frcnn_utils import FasterRCNN_prepare, train_frcnn, eval_frcnn, LoggerForSacred, save_state_dict
 from visdom_logger.logger import VisdomLogger
 
 import functools
 from collections import OrderedDict
 
-
-
-def train_eval_fasterRCNN(epochs, **kwargs):
+def train_eval_fasterRCNN(epochs,  **kwargs):
 
     frcnn_extra = kwargs["frcnn_extra"]
-
     optimizer = kwargs["optimizer"]
     model = kwargs["model"]
-    cuda = kwargs["cuda"]
-
+    device = kwargs["device"]
     logger = kwargs["logger"]
-    logger_id = frcnn_extra.s_dataset
-
-    is_break = False
-    if "is_break" in kwargs and kwargs["is_break"]:
-        is_break = True
-
-    kwargs["train_loader"] = frcnn_extra.s_dataloader_train
-
-    loss_acc = []
+    logger_id = kwargs["logger_id"]
     lr = optimizer.param_groups[0]['lr']
 
+    is_debug = False
+    if "is_debug" in kwargs:
+        is_debug = kwargs["is_debug"]
+
+    best_map = -1.
+    best_ep = 0
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=frcnn_extra.lr_decay_step, gamma=frcnn_extra.lr_decay_gamma)
     for epoch in range(1, epochs + 1):
 
-        total_loss = train_frcnn(frcnn_extra, cuda, model, optimizer, is_break)
+        total_loss = train_frcnn(frcnn_extra, device, model, optimizer, is_debug)
+        scheduler.step()
 
-        if epoch % (frcnn_extra.lr_decay_step + 1) == 0:
-            adjust_learning_rate(optimizer, frcnn_extra.lr_decay_gamma)
-            lr *= frcnn_extra.lr_decay_gamma
+        map = eval_frcnn(frcnn_extra, device, model, is_debug)
 
-        map = eval_frcnn(frcnn_extra, cuda, model, is_break)
-        torch.save(model, "{}/frcnn_model_{}_{}_{}_{}".format("all_saves", frcnn_extra.net, epoch, map, frcnn_extra.s_dataset))
-        torch.save(optimizer, "{}/frcnn_op_model_{}_{}_{}_{}".format("all_saves",frcnn_extra.net, epoch, map, frcnn_extra.s_dataset))
-        save_state_dict(model, optimizer, frcnn_extra.class_agnostic, "{}/frcnn_pth_{}_{}_{}_{}_head".format("all_saves",frcnn_extra.net, epoch, map, frcnn_extra.s_dataset))
-        save_conf(frcnn_extra, "{}/frcnn_conf_{}_{}_{}_{}".format("all_saves",frcnn_extra.net, epoch, map, frcnn_extra.s_dataset))
+        if not is_debug:
+            if map > best_map:
+                best_map = map
+                best_ep = epoch
+            torch.save(model, "{}/frcnn_model_{}_{}_{}_{}".format("all_saves", frcnn_extra.net, epoch, map, frcnn_extra.s_dataset))
+            torch.save(optimizer, "{}/frcnn_op_model_{}_{}_{}_{}".format("all_saves",frcnn_extra.net, epoch, map, frcnn_extra.s_dataset))
+            save_state_dict(model, optimizer, frcnn_extra.class_agnostic, "{}/frcnn_pth_{}_{}_{}_{}_head".format("all_saves",frcnn_extra.net, epoch, map, frcnn_extra.s_dataset))
         if logger is not None:
             logger.log_scalar("frcnn_{}_{}_training_loss".format(frcnn_extra.net, logger_id), total_loss, epoch)
             logger.log_scalar("frcnn_{}_{}_target_val_acc".format(frcnn_extra.net, logger_id), map, epoch)
         torch.cuda.empty_cache()
 
-
-    return loss_acc
+    return best_ep, best_map
 
 def main():
 
@@ -80,7 +75,7 @@ def main():
     pretrained = True
 
     batch_size = 1
-    frcnn_extra = FasterRCNN_prepare(net, batch_size, "pascal_voc_person", "cfgs/{}.yml".format(net))
+    frcnn_extra = FasterRCNN_prepare(net, batch_size, "pascal_voc_person", cfg_file="cfgs/{}.yml".format(net))
     frcnn_extra.forward()
 
 
@@ -159,8 +154,9 @@ def main():
     logger = VisdomLogger(port=10999)
     logger = LoggerForSacred(logger)
 
-    train_eval_fasterRCNN(epochs, cuda=device, model=fasterRCNN, optimizer=optimizer,
-                   logger=logger, frcnn_extra=frcnn_extra, is_break=False)
+    train_eval_fasterRCNN(3, frcnn_extra=frcnn_extra, optimizer=optimizer, model=fasterRCNN,
+                          device=device, logger=logger, logger_id="-1", is_debug=True)
+
 
 
 

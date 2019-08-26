@@ -41,22 +41,35 @@ def save_state_dict(fasterRCNN, optimizer, class_agnostic, save_name):
         'class_agnostic': class_agnostic,
     }, save_name)
 
-def save_conf(frcnn_extra, save_name):
-    f = open(save_name, 'w')
-    f.write("{}:{}\n".format('lr_decay_step', frcnn_extra.lr_decay_step))
-    f.write("{}:{}\n".format('lr_decay_gamma', frcnn_extra.lr_decay_gamma))
-    f.write("{}:{}\n".format('max_per_image', frcnn_extra.max_per_image))
-    f.write("{}:{}\n".format('class_agnostic', frcnn_extra.class_agnostic))
-    f.write("{}:{}\n".format('dataset', frcnn_extra.s_dataset))
-    f.write("{}:{}\n".format('net', frcnn_extra.net))
-    f.write("{}:{}\n".format('batch_size_train', frcnn_extra.batch_size_train))
-    f.close()
+class sampler(Sampler):
+    def __init__(self, train_size, batch_size):
+        self.num_data = train_size
+        self.num_per_batch = int(train_size / batch_size)
+        self.batch_size = batch_size
+        self.range = torch.arange(0,batch_size).view(1, batch_size).long()
+        self.leftover_flag = False
+        if train_size % batch_size:
+            self.leftover = torch.arange(self.num_per_batch*batch_size, train_size).long()
+            self.leftover_flag = True
 
+    def __iter__(self):
+        rand_num = torch.randperm(self.num_per_batch).view(-1,1) * self.batch_size
+        self.rand_num = rand_num.expand(self.num_per_batch, self.batch_size) + self.range
+
+        self.rand_num_view = self.rand_num.view(-1)
+
+        if self.leftover_flag:
+            self.rand_num_view = torch.cat((self.rand_num_view, self.leftover),0)
+
+        return iter(self.rand_num_view)
+
+    def __len__(self):
+        return self.num_data
 
 class FasterRCNN_prepare():
-    def __init__(self, net, batch_size_train, dataset, cfg_file=None, debug=False):
-        self.lr_decay_step = 5
-        self.lr_decay_gamma = 0.1
+    def __init__(self, net, batch_size_train, dataset, lr_decay_step=5, lr_decay_gamma=0.1, cfg_file=None, debug=False):
+        self.lr_decay_step = lr_decay_step
+        self.lr_decay_gamma = lr_decay_gamma
         self.max_per_image = 100
         self.thresh = 0.0 #0.0 for computing score, change to higher for visualization
         self.class_agnostic = False
@@ -120,8 +133,6 @@ class FasterRCNN_prepare():
                                                       shuffle=False, num_workers=0,
                                                       pin_memory=True)
 
-
-
     def get_imdb_name(self, dataset):
         if dataset == "pascal_voc":
             imdb_name = "voc_2007_trainval"
@@ -143,7 +154,7 @@ class FasterRCNN_prepare():
             imdbval_name = "hollywood_test"
             set_cfgs = ['ANCHOR_SCALES', '[4, 8, 16, 32]', 'ANCHOR_RATIOS', '[0.5,1,2]', 'MAX_NUM_GT_BOXES', '20']
         elif dataset == "scuta":
-            imdb_name = "scuta_500_trainval"
+            imdb_name = "scuta_trainval"
             if self.debug:
                 imdb_name = "scuta_debug"
             imdbval_name = "scuta_test"
@@ -163,34 +174,141 @@ class FasterRCNN_prepare():
 
         return imdb_name, imdbval_name, set_cfgs
 
-class sampler(Sampler):
-    def __init__(self, train_size, batch_size):
-        self.num_data = train_size
-        self.num_per_batch = int(train_size / batch_size)
-        self.batch_size = batch_size
-        self.range = torch.arange(0,batch_size).view(1, batch_size).long()
-        self.leftover_flag = False
-        if train_size % batch_size:
-            self.leftover = torch.arange(self.num_per_batch*batch_size, train_size).long()
-            self.leftover_flag = True
 
-    def __iter__(self):
-        rand_num = torch.randperm(self.num_per_batch).view(-1,1) * self.batch_size
-        self.rand_num = rand_num.expand(self.num_per_batch, self.batch_size) + self.range
+class FasterRCNN_prepare_da(FasterRCNN_prepare):
+    def __init__(self, net, batch_size_train, src_dataset, tar_dataset, cfg_file=None):
+        FasterRCNN_prepare.__init__(self, net, batch_size_train, src_dataset, cfg_file)
+        self.tar_dataset = tar_dataset
 
-        self.rand_num_view = self.rand_num.view(-1)
+    def tar_da_forward(self):
+        self.forward()
+        tar_imdb_name, tar_imdbval_name, set_cfgs = self.get_imdb_name(self.tar_dataset)
 
-        if self.leftover_flag:
-            self.rand_num_view = torch.cat((self.rand_num_view, self.leftover),0)
+        self.tar_imdb_train, roidb_train, ratio_list_train, ratio_index_train = combined_roidb(tar_imdb_name)
+        self.tar_train_size = len(roidb_train)
+        self.tar_imdb_test, roidb_test, ratio_list_test, ratio_index_test = combined_roidb(tar_imdbval_name, False)
+        self.tar_imdb_test.competition_mode(on=True)
 
-        return iter(self.rand_num_view)
+        output_dir = self.save_dir + "/" + self.net + "/" + self.tar_dataset
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
 
-    def __len__(self):
-        return self.num_data
+        tar_sampler_batch = sampler(self.tar_train_size, self.batch_size_train)
+        tar_dataset_train = roibatchLoader(roidb_train, ratio_list_train, ratio_index_train, self.batch_size_train, \
+                                           self.tar_imdb_train.num_classes, training=True)
+        self.tar_dataloader_train = torch.utils.data.DataLoader(tar_dataset_train, batch_size=self.batch_size_train,
+                                                                sampler=tar_sampler_batch, num_workers=0)
+
+        save_name = 'faster_rcnn_{}'.format(self.net)
+        self.tar_num_images_test = len(self.tar_imdb_test.image_index)
+        self.tar_all_boxes = [[[] for _ in range(self.tar_num_images_test)]
+                              for _ in range(self.tar_imdb_test.num_classes)]
+        self.tar_output_dir = get_output_dir(self.tar_imdb_test, save_name)
+        tar_dataset_test = roibatchLoader(roidb_test, ratio_list_test, ratio_index_test, self.batch_size_test, \
+                                          self.tar_imdb_test.num_classes, training=False, normalize=False)
+        self.tar_dataloader_test = torch.utils.data.DataLoader(tar_dataset_test, batch_size=self.batch_size_test,
+                                                               shuffle=False, num_workers=0,
+                                                               pin_memory=True)
+
+        self.tar_iters_per_epoch = int(self.tar_train_size / self.batch_size_train)
+
+
+def eval_frcnn_da(frcnn_extra, device, fasterRCNN, is_debug=False):
+    _t = {'im_detect': time.time(), 'misc': time.time()}
+    det_file = os.path.join(frcnn_extra.tar_output_dir, 'detections.pkl')
+    fasterRCNN.eval()
+    empty_array = np.transpose(np.array([[], [], [], [], []]), (1, 0))
+    data_iter_test = iter(frcnn_extra.tar_dataloader_test)
+    for i in range(frcnn_extra.tar_num_images_test):
+        data_test = next(data_iter_test)
+        im_data = data_test[0].to(device)
+        im_info = data_test[1].to(device)
+        gt_boxes = data_test[2].to(device)
+        num_boxes = data_test[3].to(device)
+        det_tic = time.time()
+        rois, cls_prob, bbox_pred, \
+        rpn_loss_cls, rpn_loss_box, \
+        RCNN_loss_cls, RCNN_loss_bbox, \
+        rois_label, _, _ = fasterRCNN(im_data, im_info, gt_boxes, num_boxes)
+
+        scores = cls_prob.data
+        boxes = rois.data[:, :, 1:5]
+
+        if cfg.TEST.BBOX_REG:
+            # Apply bounding-box regression deltas
+            box_deltas = bbox_pred.data
+            if cfg.TRAIN.BBOX_NORMALIZE_TARGETS_PRECOMPUTED:
+                # Optionally normalize targets by a precomputed mean and stdev
+                if frcnn_extra.class_agnostic:
+                    box_deltas = box_deltas.view(-1, 4) * torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_STDS).cuda() \
+                                 + torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_MEANS).cuda()
+                    box_deltas = box_deltas.view(1, -1, 4)
+                else:
+                    box_deltas = box_deltas.view(-1, 4) * torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_STDS).cuda() \
+                                 + torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_MEANS).cuda()
+                    box_deltas = box_deltas.view(1, -1, 4 * len(frcnn_extra.tar_imdb_test.classes))
+
+            pred_boxes = bbox_transform_inv(boxes, box_deltas, 1)
+            pred_boxes = clip_boxes(pred_boxes, im_info.data, 1)
+        else:
+            # Simply repeat the boxes, once for each class
+            pred_boxes = np.tile(boxes, (1, scores.shape[1]))
+
+        pred_boxes /= data_test[1][0][2].item()
+
+        scores = scores.squeeze()
+        pred_boxes = pred_boxes.squeeze()
+        det_toc = time.time()
+        detect_time = det_toc - det_tic
+        misc_tic = time.time()
+        for j in range(1, frcnn_extra.tar_imdb_test.num_classes):
+            inds = torch.nonzero(scores[:, j] > frcnn_extra.thresh).view(-1)
+            # if there is det
+            if inds.numel() > 0:
+                cls_scores = scores[:, j][inds]
+                _, order = torch.sort(cls_scores, 0, True)
+                if frcnn_extra.class_agnostic:
+                    cls_boxes = pred_boxes[inds, :]
+                else:
+                    cls_boxes = pred_boxes[inds][:, j * 4:(j + 1) * 4]
+
+                cls_dets = torch.cat((cls_boxes, cls_scores.unsqueeze(1)), 1)
+                # cls_dets = torch.cat((cls_boxes, cls_scores), 1)
+                cls_dets = cls_dets[order]
+                keep = nms(cls_boxes[order, :], cls_scores[order], cfg.TEST.NMS)
+                cls_dets = cls_dets[keep.view(-1).long()]
+                frcnn_extra.tar_all_boxes[j][i] = cls_dets.cpu().numpy()
+            else:
+                frcnn_extra.tar_all_boxes[j][i] = empty_array
+
+        # Limit to max_per_image detections *over all classes*
+        if frcnn_extra.max_per_image > 0:
+            image_scores = np.hstack([frcnn_extra.tar_all_boxes[j][i][:, -1]
+                                      for j in range(1, frcnn_extra.tar_imdb_test.num_classes)])
+            if len(image_scores) > frcnn_extra.max_per_image:
+                image_thresh = np.sort(image_scores)[-frcnn_extra.max_per_image]
+                for j in range(1, frcnn_extra.tar_imdb_test.num_classes):
+                    keep = np.where(frcnn_extra.tar_all_boxes[j][i][:, -1] >= image_thresh)[0]
+                    frcnn_extra.tar_all_boxes[j][i] = frcnn_extra.tar_all_boxes[j][i][keep, :]
+
+        misc_toc = time.time()
+        if is_debug:
+            break
+    ap = frcnn_extra.tar_imdb_test.evaluate_detections(frcnn_extra.tar_all_boxes, frcnn_extra.tar_output_dir)
+    del rois
+    del cls_prob
+    del bbox_pred
+    del rpn_loss_cls
+    del rpn_loss_box
+    del RCNN_loss_cls
+    del RCNN_loss_bbox
+    del rois_label
+
+    return ap
 
 def eval_frcnn(frcnn_extra, device, fasterRCNN, is_break=False):
     _t = {'im_detect': time.time(), 'misc': time.time()}
-    det_file = os.path.join(frcnn_extra.s_output_dir, 'detections.pkl')
+
     fasterRCNN.eval()
     empty_array = np.transpose(np.array([[], [], [], [], []]), (1, 0))
     data_iter_test = iter(frcnn_extra.s_dataloader_test)
