@@ -21,49 +21,54 @@ import torch.nn as nn
 import os
 import time
 
-from frcnn_utils import FasterRCNN_prepare, train_frcnn, eval_frcnn, LoggerForSacred, save_state_dict
+from frcnn_utils import FasterRCNN_prepare, train_frcnn, eval_frcnn, LoggerForSacred, save_state_dict, save_conf
 from visdom_logger.logger import VisdomLogger
 
 import functools
 from collections import OrderedDict
 
-def train_eval_fasterRCNN(epochs,  **kwargs):
+
+
+def train_eval_fasterRCNN(epochs, **kwargs):
 
     frcnn_extra = kwargs["frcnn_extra"]
+
     optimizer = kwargs["optimizer"]
     model = kwargs["model"]
-    device = kwargs["device"]
+    cuda = kwargs["cuda"]
+
     logger = kwargs["logger"]
-    logger_id = kwargs["logger_id"]
+    logger_id = frcnn_extra.s_dataset
+
+    is_break = False
+    if "is_break" in kwargs and kwargs["is_break"]:
+        is_break = True
+
+    kwargs["train_loader"] = frcnn_extra.s_dataloader_train
+
+    loss_acc = []
     lr = optimizer.param_groups[0]['lr']
 
-    is_debug = False
-    if "is_debug" in kwargs:
-        is_debug = kwargs["is_debug"]
-
-    best_map = -1.
-    best_ep = 0
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=frcnn_extra.lr_decay_step, gamma=frcnn_extra.lr_decay_gamma)
     for epoch in range(1, epochs + 1):
 
-        total_loss = train_frcnn(frcnn_extra, device, model, optimizer, is_debug)
-        scheduler.step()
+        total_loss = train_frcnn(frcnn_extra, cuda, model, optimizer, is_break)
 
-        map = eval_frcnn(frcnn_extra, device, model, is_debug)
+        if epoch % (frcnn_extra.lr_decay_step + 1) == 0:
+            adjust_learning_rate(optimizer, frcnn_extra.lr_decay_gamma)
+            lr *= frcnn_extra.lr_decay_gamma
 
-        if not is_debug:
-            if map > best_map:
-                best_map = map
-                best_ep = epoch
-            torch.save(model, "{}/frcnn_model_{}_{}_{}_{}".format("all_saves", frcnn_extra.net, epoch, map, frcnn_extra.s_dataset))
-            torch.save(optimizer, "{}/frcnn_op_model_{}_{}_{}_{}".format("all_saves",frcnn_extra.net, epoch, map, frcnn_extra.s_dataset))
-            save_state_dict(model, optimizer, frcnn_extra.class_agnostic, "{}/frcnn_pth_{}_{}_{}_{}_head".format("all_saves",frcnn_extra.net, epoch, map, frcnn_extra.s_dataset))
+        map = eval_frcnn(frcnn_extra, cuda, model, is_break)
+        torch.save(model, "{}/frcnn_fn_model_{}_{}_{}_{}_head".format("all_saves", frcnn_extra.net, epoch, map, frcnn_extra.dataset))
+        torch.save(optimizer, "{}/frcnn_fn_op_model_{}_{}_{}_{}_head".format("all_saves",frcnn_extra.net, epoch, map, frcnn_extra.dataset))
+        save_state_dict(model, optimizer, frcnn_extra.class_agnostic, "{}/frcnn_fn_pth_{}_{}_{}_{}_head".format("all_saves",frcnn_extra.net, epoch, map, frcnn_extra.dataset))
+        save_conf(frcnn_extra, "{}/frcnn_fn_conf_{}_{}_{}_{}_head".format("all_saves",frcnn_extra.net, epoch, map, frcnn_extra.dataset))
         if logger is not None:
-            logger.log_scalar("frcnn_{}_{}_training_loss".format(frcnn_extra.net, logger_id), total_loss, epoch)
-            logger.log_scalar("frcnn_{}_{}_target_val_acc".format(frcnn_extra.net, logger_id), map, epoch)
+            logger.log_scalar("frcnn_fn_{}_{}_training_loss".format(frcnn_extra.net, logger_id), total_loss, epoch)
+            logger.log_scalar("frcnn_fn_{}_{}_target_val_acc".format(frcnn_extra.net, logger_id), map, epoch)
         torch.cuda.empty_cache()
 
-    return best_ep, best_map
+
+    return loss_acc
 
 def main():
 
@@ -71,11 +76,12 @@ def main():
     device = torch.device("cuda")
 
     # Model Config
-    net = "resnet101"
+    net = "vgg16"
     pretrained = True
+    pth_path = "all_saves/frcnn_pth_vgg16_9_0.8101311655030617_scuta"
 
     batch_size = 1
-    frcnn_extra = FasterRCNN_prepare(net, batch_size, "pascal_voc_person", cfg_file="cfgs/{}.yml".format(net))
+    frcnn_extra = FasterRCNN_prepare(net, batch_size, "hollywood", "cfgs/{}.yml".format(net))
     frcnn_extra.forward()
 
 
@@ -86,6 +92,9 @@ def main():
             fasterRCNN = vgg16(frcnn_extra.s_imdb_train.classes, pretrained=pretrained,
                                class_agnostic=frcnn_extra.class_agnostic,
                                pth_path='data/pretrained_model/{}_caffe.pth'.format(net))
+
+
+
         if frcnn_extra.net == "resnet101":
             lr = 0.001
             epochs = 40
@@ -107,38 +116,13 @@ def main():
             fasterRCNN = resnet(frcnn_extra.s_imdb_train.classes, pretrained=pretrained,
                                class_agnostic=frcnn_extra.class_agnostic,
                                pth_path='data/pretrained_model/{}_caffe.pth'.format(net))
-    elif frcnn_extra.s_dataset == 'pascal_voc_person':
-        if frcnn_extra.net == "vgg16":
-            lr = 0.01
-            epochs = 20
-            fasterRCNN = vgg16(frcnn_extra.s_imdb_train.classes, pretrained=pretrained,
-                               class_agnostic=frcnn_extra.class_agnostic,
-                               pth_path='data/pretrained_model/{}_caffe.pth'.format(net))
-        if frcnn_extra.net == "resnet101":
-            lr = 0.001
-            epochs = 10
-            frcnn_extra.lr_decay_step = 10
-            fasterRCNN = resnet(frcnn_extra.s_imdb_train.classes, pretrained=pretrained,
-                               class_agnostic=frcnn_extra.class_agnostic,
-                               pth_path='data/pretrained_model/{}_caffe.pth'.format(net))
-
-    elif frcnn_extra.s_dataset == 'pascal_voc':
-        if frcnn_extra.net == "vgg16":
-            lr = 0.01
-            epochs = 20
-            fasterRCNN = vgg16(frcnn_extra.s_imdb_train.classes, pretrained=pretrained,
-                               class_agnostic=frcnn_extra.class_agnostic,
-                               pth_path='data/pretrained_model/{}_caffe.pth'.format(net))
-        if frcnn_extra.net == "resnet101":
-            lr = 0.001
-            epochs = 10
-            frcnn_extra.lr_decay_step = 10
-            fasterRCNN = resnet(frcnn_extra.s_imdb_train.classes, pretrained=pretrained,
-                               class_agnostic=frcnn_extra.class_agnostic,
-                               pth_path='data/pretrained_model/{}_caffe.pth'.format(net))
-
 
     fasterRCNN.create_architecture()
+    if pth_path != "":
+        ck = torch.load(pth_path)
+        fasterRCNN.load_state_dict(ck['model'], strict=False)
+        cfg.POOLING_MODE = ck['pooling_mode']
+
     params = []
     for key, value in dict(fasterRCNN.named_parameters()).items():
         if value.requires_grad:
@@ -151,12 +135,11 @@ def main():
     optimizer = torch.optim.SGD(params, momentum=momentum, lr=lr)
     fasterRCNN = fasterRCNN.to(device)
 
-    logger = VisdomLogger(port=10999)
+    logger = VisdomLogger(port=9000)
     logger = LoggerForSacred(logger)
 
-    train_eval_fasterRCNN(3, frcnn_extra=frcnn_extra, optimizer=optimizer, model=fasterRCNN,
-                          device=device, logger=logger, logger_id="-1", is_debug=True)
-
+    train_eval_fasterRCNN(epochs, cuda=device, model=fasterRCNN, optimizer=optimizer,
+                   logger=logger, frcnn_extra=frcnn_extra, is_break=False)
 
 
 

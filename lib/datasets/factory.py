@@ -19,12 +19,17 @@ from datasets.vg import vg
 from datasets.hollywood import hollywood
 from datasets.SCUTA import scuta
 from datasets.SCUTA_Head import scuta_head
+from datasets.SCUTB_Head import scutb_head
 
 import numpy as np
 
-for split in ['trainval','test', 'debug']:
+for split in ['trainval','test', 'debug', '500_trainval', '1000_trainval']:
     name = 'scuta_{}'.format(split)
     __sets[name] = (lambda split=split: scuta_head(split))
+
+for split in ['trainval','test', 'debug', '500_trainval', '1000_trainval']:
+    name = 'scutb_{}'.format(split)
+    __sets[name] = (lambda split=split: scutb_head(split))
 
 for split in ['trainval','test', 'debug']:
     name = 'scuta_ori_{}'.format(split)
