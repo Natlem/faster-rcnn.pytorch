@@ -35,7 +35,6 @@ def train_eval_fasterRCNN(epochs,  **kwargs):
     device = kwargs["device"]
     logger = kwargs["logger"]
     logger_id = kwargs["logger_id"]
-    lr = optimizer.param_groups[0]['lr']
 
     is_debug = False
     if "is_debug" in kwargs:

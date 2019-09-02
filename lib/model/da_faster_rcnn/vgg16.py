@@ -17,7 +17,7 @@ from model.da_faster_rcnn.faster_rcnn import _fasterRCNN
 import pdb
 
 
-class vgg16(_fasterRCNN):
+class vgg16DA(_fasterRCNN):
     def __init__(self, classes, pretrained=False, class_agnostic=False, model_path="",
                  pth_path='frcnn/data/pretrained_model/vgg16_caffe.pth'):
         self.pth_path = pth_path
@@ -46,6 +46,27 @@ class vgg16(_fasterRCNN):
             state_dict = torch.load(self.pth_path)
             vgg.load_state_dict({k: v for k, v in state_dict.items() if k in vgg.state_dict()})
 
+            vgg.classifier = nn.Sequential(*list(vgg.classifier._modules.values())[:-1])
+
+            # not using the last maxpool layer
+            self.RCNN_base = nn.Sequential(*list(vgg.features._modules.values())[:-1])
+
+            # Fix the layers before conv3:
+            for layer in range(10):
+                for p in self.RCNN_base[layer].parameters(): p.requires_grad = False
+
+            # self.RCNN_base = _RCNN_base(vgg.features, self.classes, self.dout_base_model)
+
+            self.RCNN_top = vgg.classifier
+
+            # not using the last maxpool layer
+            self.RCNN_cls_score = nn.Linear(4096, self.n_classes)
+
+            if self.class_agnostic:
+                self.RCNN_bbox_pred = nn.Linear(4096, 4)
+            else:
+                self.RCNN_bbox_pred = nn.Linear(4096, 4 * self.n_classes)
+        else:
             vgg.classifier = nn.Sequential(*list(vgg.classifier._modules.values())[:-1])
 
             # not using the last maxpool layer

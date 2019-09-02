@@ -3,12 +3,9 @@ import sys
 from roi_data_layer.roidb import combined_roidb
 from roi_data_layer.roibatchLoader import roibatchLoader
 
-<<<<<<< HEAD
-=======
 from roi_da_data_layer.roidb import combined_roidb as combined_roidb_da
 from roi_da_data_layer.roibatchLoader import roibatchLoader as roibatchLoader_da
 
->>>>>>> another_da
 from model.utils.config import cfg, cfg_from_file, cfg_from_list, get_output_dir
 from model.utils.net_utils import weights_normal_init, save_net, load_net, adjust_learning_rate, save_checkpoint, clip_gradient
 
@@ -309,6 +306,8 @@ def train_frcnn(frcnn_extra, device, fasterRCNN, optimizer, is_break=False):
         im_info = data[1].to(device)
         gt_boxes = data[2].to(device)
         num_boxes = data[3].to(device)
+
+        print("file:{}".format(data[5]))
 
         fasterRCNN.zero_grad()
         rois, cls_prob, bbox_pred, \

@@ -18,8 +18,8 @@ import time
 from frcnn_utils import FasterRCNN_prepare, sampler
 
 class FasterRCNN_prepare_another_da(FasterRCNN_prepare):
-    def __init__(self, net, batch_size_train, s_dataset, t_dataset, cfg_file=None, debug=False):
-        FasterRCNN_prepare.__init__(self, net, batch_size_train, s_dataset, cfg_file, debug=debug)
+    def __init__(self, net, batch_size_train, s_dataset, t_dataset, lr_decay_step=5, lr_decay_gamma=0.1, cfg_file=None, debug=False):
+        FasterRCNN_prepare.__init__(self, net, batch_size_train, s_dataset, lr_decay_step=lr_decay_step, lr_decay_gamma=lr_decay_gamma, cfg_file=cfg_file, debug=debug)
         self.t_dataset = t_dataset
 
     def tar_da_forward(self):
@@ -56,7 +56,7 @@ class FasterRCNN_prepare_another_da(FasterRCNN_prepare):
 
         self.t_iters_per_epoch = int(self.t_train_size / self.batch_size_train)
 
-def train_frcnn_da(alpha, frcnn_extra_ada, device, fasterRCNN, optimizer, is_break=False):
+def train_frcnn_da(alpha, frcnn_extra_ada, device, fasterRCNN, optimizer, is_debug=False):
 
 
 
@@ -89,6 +89,7 @@ def train_frcnn_da(alpha, frcnn_extra_ada, device, fasterRCNN, optimizer, is_bre
         src_gt_boxes = src_data[2].to(device)
         src_num_boxes = src_data[3].to(device)
         src_need_backprop = src_data[4].to(device)
+        print("file:{}".format(src_data[5]))
 
         tgt_im_data = tgt_data[0].to(device)
         tgt_im_info = tgt_data[1].to(device)
@@ -104,17 +105,6 @@ def train_frcnn_da(alpha, frcnn_extra_ada, device, fasterRCNN, optimizer, is_bre
         DA_cst_loss, tgt_DA_cst_loss, base_feat, tgt_base_feat, pooled_feat, tgt_pooled_feat = \
             fasterRCNN.forward_da(src_im_data, src_im_info, src_gt_boxes, src_num_boxes, src_need_backprop,
                        tgt_im_data, tgt_im_info, tgt_gt_boxes, tgt_num_boxes, tgt_need_backprop)
-
-        if s_tt_base_feat is None:
-            s_tt_base_feat = base_feat
-        else:
-            s_tt_base_feat += base_feat
-
-        if t_tt_base_feat is None:
-            t_tt_base_feat = tgt_base_feat
-        else:
-            t_tt_base_feat += tgt_base_feat
-
 
         s_loss = rpn_loss_cls.mean() + rpn_loss_box.mean() \
                + RCNN_loss_cls.mean() + RCNN_loss_bbox.mean()
@@ -134,7 +124,7 @@ def train_frcnn_da(alpha, frcnn_extra_ada, device, fasterRCNN, optimizer, is_bre
             clip_gradient(fasterRCNN, 10.)
         optimizer.step()
 
-        if is_break:
+        if is_debug:
             break
     loss_temp = loss_temp
     del rois
@@ -155,8 +145,6 @@ def train_frcnn_da(alpha, frcnn_extra_ada, device, fasterRCNN, optimizer, is_bre
     return loss_temp, loss_DA_img_cls, loss_DA_ins_cls, loss_DA_cst
 
 def train_frcnn_da_img(alpha, frcnn_extra_ada, device, fasterRCNN, optimizer, is_break=False):
-
-
 
     fasterRCNN.train()
     loss_temp = 0
@@ -183,6 +171,7 @@ def train_frcnn_da_img(alpha, frcnn_extra_ada, device, fasterRCNN, optimizer, is
         src_gt_boxes = src_data[2].to(device)
         src_num_boxes = src_data[3].to(device)
         src_need_backprop = src_data[4].to(device)
+        print("file:{}".format(src_data[5]))
 
         tgt_im_data = tgt_data[0].to(device)
         tgt_im_info = tgt_data[1].to(device)
@@ -237,7 +226,101 @@ def train_frcnn_da_img(alpha, frcnn_extra_ada, device, fasterRCNN, optimizer, is
     del loss
     return loss_temp, loss_DA_img_cls, loss_DA_ins_cls, loss_DA_cst
 
-def eval_frcnn_da(frcnn_extra, device, fasterRCNN, is_break=False):
+def eval_frcnn_s_da(frcnn_extra, device, fasterRCNN, is_break=False):
+    _t = {'im_detect': time.time(), 'misc': time.time()}
+    det_file = os.path.join(frcnn_extra.s_output_dir, 'detections.pkl')
+    fasterRCNN.eval()
+    empty_array = np.transpose(np.array([[], [], [], [], []]), (1, 0))
+    data_iter_test = iter(frcnn_extra.s_dataloader_test)
+    for i in range(frcnn_extra.s_num_images_test):
+        data_test = next(data_iter_test)
+        im_data = data_test[0].to(device)
+        im_info = data_test[1].to(device)
+        gt_boxes = data_test[2].to(device)
+        num_boxes = data_test[3].to(device)
+        det_tic = time.time()
+        rois, cls_prob, bbox_pred, \
+        rpn_loss_cls, rpn_loss_box, \
+        RCNN_loss_cls, RCNN_loss_bbox, \
+        rois_label = fasterRCNN(im_data, im_info, gt_boxes, num_boxes)
+
+        scores = cls_prob.data
+        boxes = rois.data[:, :, 1:5]
+
+        if cfg.TEST.BBOX_REG:
+            # Apply bounding-box regression deltas
+            box_deltas = bbox_pred.data
+            if cfg.TRAIN.BBOX_NORMALIZE_TARGETS_PRECOMPUTED:
+                # Optionally normalize targets by a precomputed mean and stdev
+                if frcnn_extra.class_agnostic:
+                    box_deltas = box_deltas.view(-1, 4) * torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_STDS).cuda() \
+                                 + torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_MEANS).cuda()
+                    box_deltas = box_deltas.view(1, -1, 4)
+                else:
+                    box_deltas = box_deltas.view(-1, 4) * torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_STDS).cuda() \
+                                 + torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_MEANS).cuda()
+                    box_deltas = box_deltas.view(1, -1, 4 * len(frcnn_extra.s_imdb_test.classes))
+
+            pred_boxes = bbox_transform_inv(boxes, box_deltas, 1)
+            pred_boxes = clip_boxes(pred_boxes, im_info.data, 1)
+        else:
+            # Simply repeat the boxes, once for each class
+            pred_boxes = np.tile(boxes, (1, scores.shape[1]))
+
+        pred_boxes /= data_test[1][0][2].item()
+
+        scores = scores.squeeze()
+        pred_boxes = pred_boxes.squeeze()
+        det_toc = time.time()
+        detect_time = det_toc - det_tic
+        misc_tic = time.time()
+        for j in range(1, frcnn_extra.s_imdb_test.num_classes):
+            inds = torch.nonzero(scores[:, j] > frcnn_extra.thresh).view(-1)
+            # if there is det
+            if inds.numel() > 0:
+                cls_scores = scores[:, j][inds]
+                _, order = torch.sort(cls_scores, 0, True)
+                if frcnn_extra.class_agnostic:
+                    cls_boxes = pred_boxes[inds, :]
+                else:
+                    cls_boxes = pred_boxes[inds][:, j * 4:(j + 1) * 4]
+
+                cls_dets = torch.cat((cls_boxes, cls_scores.unsqueeze(1)), 1)
+                # cls_dets = torch.cat((cls_boxes, cls_scores), 1)
+                cls_dets = cls_dets[order]
+                keep = nms(cls_boxes[order, :], cls_scores[order], cfg.TEST.NMS)
+                cls_dets = cls_dets[keep.view(-1).long()]
+                frcnn_extra.s_all_boxes[j][i] = cls_dets.cpu().numpy()
+            else:
+                frcnn_extra.s_all_boxes[j][i] = empty_array
+
+        # Limit to max_per_image detections *over all classes*
+        if frcnn_extra.max_per_image > 0:
+            image_scores = np.hstack([frcnn_extra.s_all_boxes[j][i][:, -1]
+                                      for j in range(1, frcnn_extra.s_imdb_test.num_classes)])
+            if len(image_scores) > frcnn_extra.max_per_image:
+                image_thresh = np.sort(image_scores)[-frcnn_extra.max_per_image]
+                for j in range(1, frcnn_extra.s_imdb_test.num_classes):
+                    keep = np.where(frcnn_extra.s_all_boxes[j][i][:, -1] >= image_thresh)[0]
+                    frcnn_extra.s_all_boxes[j][i] = frcnn_extra.s_all_boxes[j][i][keep, :]
+
+        misc_toc = time.time()
+        nms_time = misc_toc - misc_tic
+        if is_break:
+            break
+    ap = frcnn_extra.s_imdb_test.evaluate_detections(frcnn_extra.s_all_boxes, frcnn_extra.s_output_dir)
+    del rois
+    del cls_prob
+    del bbox_pred
+    del rpn_loss_cls
+    del rpn_loss_box
+    del RCNN_loss_cls
+    del RCNN_loss_bbox
+    del rois_label
+
+    return ap
+
+def eval_frcnn_t_da(frcnn_extra, device, fasterRCNN, is_break=False):
     _t = {'im_detect': time.time(), 'misc': time.time()}
     det_file = os.path.join(frcnn_extra.t_output_dir, 'detections.pkl')
     fasterRCNN.eval()

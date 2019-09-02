@@ -197,7 +197,7 @@ class roibatchLoader(data.Dataset):
 
 
         # check the bounding box:
-        not_keep = (gt_boxes[:,0] == gt_boxes[:,2]) | (gt_boxes[:,1] == gt_boxes[:,3])
+        not_keep = (gt_boxes[:,2] - gt_boxes[:,0] < 10) | (gt_boxes[:,3] - gt_boxes[:,1] < 10)
         keep = torch.nonzero(not_keep == 0).view(-1)
 
         gt_boxes_padding = torch.FloatTensor(self.max_num_box, gt_boxes.size(1)).zero_()
@@ -214,7 +214,7 @@ class roibatchLoader(data.Dataset):
 
 
         return padding_data, im_info, gt_boxes_padding,num_boxes,\
-               need_backprop
+               need_backprop, minibatch_db[0]['image']
 
     else:
 
@@ -225,7 +225,7 @@ class roibatchLoader(data.Dataset):
         num_boxes = 0
         need_backprop=0
 
-        return data, im_info, gt_boxes, num_boxes,need_backprop
+        return data, im_info, gt_boxes, num_boxes,need_backprop, minibatch_db[0]['image']
 
   def __len__(self):
     return len(self._roidb)

@@ -205,7 +205,7 @@ class roibatchLoader(data.Dataset):
         padding_data = padding_data.permute(2, 0, 1).contiguous()
         im_info = im_info.view(3)
 
-        return padding_data, im_info, gt_boxes_padding, num_boxes
+        return padding_data, im_info, gt_boxes_padding, num_boxes, minibatch_db[0]['image']
     else:
         data = data.permute(0, 3, 1, 2).contiguous().view(3, data_height, data_width)
         im_info = im_info.view(3)
@@ -213,7 +213,7 @@ class roibatchLoader(data.Dataset):
         gt_boxes = torch.FloatTensor([1,1,1,1,1])
         num_boxes = 0
 
-        return data, im_info, gt_boxes, num_boxes
+        return data, im_info, gt_boxes, num_boxes, minibatch_db[0]['image']
 
   def __len__(self):
     return len(self._roidb)
