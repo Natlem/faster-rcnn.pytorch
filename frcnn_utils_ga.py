@@ -17,12 +17,12 @@ import os
 import time
 from frcnn_utils import FasterRCNN_prepare, sampler
 
-class FasterRCNN_prepare_another_da(FasterRCNN_prepare):
+class FasterRCNN_prepare_ga(FasterRCNN_prepare):
     def __init__(self, net, batch_size_train, s_dataset, t_dataset, lr_decay_step=5, lr_decay_gamma=0.1, cfg_file=None, debug=False):
         FasterRCNN_prepare.__init__(self, net, batch_size_train, s_dataset, lr_decay_step=lr_decay_step, lr_decay_gamma=lr_decay_gamma, cfg_file=cfg_file, debug=debug)
         self.t_dataset = t_dataset
 
-    def tar_da_forward(self):
+    def ga_forward(self):
 
         #### Source loading
         self.forward()
@@ -40,6 +40,13 @@ class FasterRCNN_prepare_another_da(FasterRCNN_prepare):
         t_sampler_batch = sampler(self.t_train_size, self.batch_size_train)
         t_dataset_train = roibatchLoader(t_roidb_train, t_ratio_list_train, t_ratio_index_train, self.batch_size_train, \
                                            self.t_imdb_train.num_classes, training=True, is_target=True)
+
+        random_ind = torch.randperm(t_dataset_train.data_size / 2)
+        tracks_datasets = torch.utils.data.Subset(t_dataset_train, random_ind)
+        self.tracks_dataloader_train = torch.utils.data.DataLoader(tracks_datasets, batch_size=self.batch_size_train,
+                                                                sampler=t_sampler_batch, num_workers=0)
+
+
         self.t_dataloader_train = torch.utils.data.DataLoader(t_dataset_train, batch_size=self.batch_size_train,
                                                                 sampler=t_sampler_batch, num_workers=0)
 
@@ -55,6 +62,121 @@ class FasterRCNN_prepare_another_da(FasterRCNN_prepare):
                                                                pin_memory=True)
 
         self.t_iters_per_epoch = int(self.t_train_size / self.batch_size_train)
+        self.tracks_iters_per_epoch = int(t_dataset_train.data_size / 2)
+
+def train_frcnn_ga(alpha, frcnn_extra_ada, device, fasterRCNN, optimizer, is_debug=False):
+
+    fasterRCNN.train()
+    loss_temp = 0
+
+
+    src_data_iter = iter(frcnn_extra_ada.s_dataloader_train)
+    tar_data_iter = iter(frcnn_extra_ada.t_dataloader_train)
+    tracks_data_iter = iter(frcnn_extra_ada.tracks_dataloader_train)
+
+    if frcnn_extra_ada.t_iters_per_epoch < frcnn_extra_ada.s_iters_per_epoch:
+        iters_per_epoch = frcnn_extra_ada.t_iters_per_epoch
+    else:
+        iters_per_epoch = frcnn_extra_ada.s_iters_per_epoch
+
+    s_tt_base_feat = None
+    t_tt_base_feat = None
+
+    for step in range(iters_per_epoch):
+
+        if step == frcnn_extra_ada.s_iters_per_epoch:
+            src_data_iter = iter(frcnn_extra_ada.s_dataloader_train)
+        if step == frcnn_extra_ada.t_iters_per_epoch:
+            tar_data_iter = iter(frcnn_extra_ada.t_dataloader_train)
+        if step == frcnn_extra_ada.tracks_iters_per_epoch:
+            tar_data_iter = iter(frcnn_extra_ada.tracks_dataloader_train)
+
+        tgt_data = next(tar_data_iter)
+        track_data = next(tracks_data_iter)
+        src_data = next(src_data_iter)
+        src_im_data = src_data[0].to(device)
+        src_im_info = src_data[1].to(device)
+        src_gt_boxes = src_data[2].to(device)
+        src_num_boxes = src_data[3].to(device)
+        src_need_backprop = src_data[4].to(device)
+        print("file:{}".format(src_data[5]))
+
+        tgt_im_data = tgt_data[0].to(device)
+        tgt_im_info = tgt_data[1].to(device)
+        tgt_gt_boxes = tgt_data[2].to(device)
+        tgt_num_boxes = tgt_data[3].to(device)
+        tgt_need_backprop = tgt_data[4].to(device)
+
+        track_im_data = tgt_data[0].to(device)
+        track_im_info = tgt_data[1].to(device)
+        track_gt_boxes = tgt_data[2].to(device)
+        track_num_boxes = tgt_data[3].to(device)
+        track_need_backprop = tgt_data[4].to(device)
+        fasterRCNN.zero_grad()
+        rois, cls_prob, bbox_pred, rpn_loss_cls, rpn_loss_bbox, RCNN_loss_cls, RCNN_loss_bbox, rois_label = fasterRCNN.forward(track_im_data, track_im_info, track_gt_boxes, track_num_boxes)
+        track_loss = rpn_loss_cls + rpn_loss_bbox + RCNN_loss_cls + RCNN_loss_bbox
+        track_loss.backward()
+
+        g_m = {}
+        for n, p in fasterRCNN.named_paremeters():
+            g_m[n] = p.grad
+
+        fasterRCNN.zero_grad()
+        rois, cls_prob, bbox_pred, \
+        rpn_loss_cls, rpn_loss_box, \
+        RCNN_loss_cls, RCNN_loss_bbox, \
+        rois_label, DA_img_loss_cls, DA_ins_loss_cls, tgt_DA_img_loss_cls, tgt_DA_ins_loss_cls, \
+        DA_cst_loss, tgt_DA_cst_loss, base_feat, tgt_base_feat, pooled_feat, tgt_pooled_feat = \
+            fasterRCNN.forward_da(src_im_data, src_im_info, src_gt_boxes, src_num_boxes, src_need_backprop,
+                       tgt_im_data, tgt_im_info, tgt_gt_boxes, tgt_num_boxes, tgt_need_backprop, track_im_data, )
+
+        s_loss = rpn_loss_cls.mean() + rpn_loss_box.mean() \
+               + RCNN_loss_cls.mean() + RCNN_loss_bbox.mean()
+
+        loss = s_loss + alpha * (DA_img_loss_cls.mean() + DA_ins_loss_cls.mean() \
+                               + tgt_DA_img_loss_cls.mean() + tgt_DA_ins_loss_cls.mean() + DA_cst_loss.mean() + tgt_DA_cst_loss.mean())
+        loss_temp += loss.item()
+
+        loss_DA_img_cls = alpha * (DA_img_loss_cls.item() + tgt_DA_img_loss_cls.item()) / 2
+        loss_DA_ins_cls = alpha * (DA_ins_loss_cls.item() + tgt_DA_ins_loss_cls.item()) / 2
+        loss_DA_cst = alpha * (DA_cst_loss.item() + tgt_DA_cst_loss.item()) / 2
+
+
+        # backward
+        optimizer.zero_grad()
+        loss.backward()
+
+        cs_loss = torch.zeros(len(g_m.keys()))
+
+
+        for i, (n, p) in enumerate(fasterRCNN.named_paremeters()):
+           cs_loss[i] = F.cosine_similarity(p.grad, g_m[n])
+
+        cs_loss.norm(p=1).backward()
+
+        if frcnn_extra_ada.net == "vgg16":
+            clip_gradient(fasterRCNN, 10.)
+        optimizer.step()
+
+        if is_debug:
+            break
+    loss_temp = loss_temp
+    del rois
+    del cls_prob
+    del bbox_pred
+    del rpn_loss_cls
+    del rpn_loss_box
+    del RCNN_loss_cls
+    del RCNN_loss_bbox
+    del rois_label
+    del DA_img_loss_cls
+    del DA_ins_loss_cls
+    del tgt_DA_img_loss_cls
+    del tgt_DA_ins_loss_cls
+    del DA_cst_loss
+    del tgt_DA_cst_loss
+    del loss
+    return loss_temp, loss_DA_img_cls, loss_DA_ins_cls, loss_DA_cst
 
 def train_frcnn_da(alpha, frcnn_extra_ada, device, fasterRCNN, optimizer, is_debug=False):
 
@@ -66,7 +188,6 @@ def train_frcnn_da(alpha, frcnn_extra_ada, device, fasterRCNN, optimizer, is_deb
 
     src_data_iter = iter(frcnn_extra_ada.s_dataloader_train)
     tar_data_iter = iter(frcnn_extra_ada.t_dataloader_train)
-
 
     if frcnn_extra_ada.t_iters_per_epoch < frcnn_extra_ada.s_iters_per_epoch:
         iters_per_epoch = frcnn_extra_ada.t_iters_per_epoch

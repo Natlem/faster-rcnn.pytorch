@@ -246,6 +246,7 @@ class _fasterRCNN(nn.Module):
         cls_prob = cls_prob.view(batch_size, rois.size(1), -1)
         bbox_pred = bbox_pred.view(batch_size, rois.size(1), -1)
 
+
         """ =================== for target =========================="""
 
         tgt_batch_size = tgt_im_data.size(0)
@@ -336,6 +337,7 @@ class _fasterRCNN(nn.Module):
 
         return rois, cls_prob, bbox_pred, rpn_loss_cls, rpn_loss_bbox, RCNN_loss_cls, RCNN_loss_bbox, rois_label,\
                DA_img_loss_cls,DA_ins_loss_cls,tgt_DA_img_loss_cls,tgt_DA_ins_loss_cls,DA_cst_loss,tgt_DA_cst_loss, base_feat, tgt_base_feat, pooled_feat, tgt_pooled_feat
+
 
 
     def _init_weights(self):
