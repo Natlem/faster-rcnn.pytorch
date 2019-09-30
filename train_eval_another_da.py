@@ -88,15 +88,16 @@ def main():
     alpha = 0.1
     #source_model_pretrained = 'frcnn_model_vgg16_2_0.7956096921947304_hollywood'
     #source_model_pretrained = 'frcnn_model_vgg16_9_0.8100253828043802_scuta'
-    pth_path = "all_saves/frcnn_pth_resnet101_17_0.7665382823348219_scuta_head"
+    #pth_path = "all_saves/frcnn_pth_resnet101_17_0.7665382823348219_scuta_head"
     #pth_path = "all_saves/frcnn_pth_vgg16_1_0.7456834728436339_hollywood_head"
+    pth_path = ""
 
     # Model Config
-    net = "resnet101"
+    net = "vgg16"
     pretrained = True
 
     batch_size = 1
-    frcnn_extra = FasterRCNN_prepare_another_da(net, batch_size, "scuta", "scutb", cfg_file="cfgs/vgg16.yml")
+    frcnn_extra = FasterRCNN_prepare_another_da(net, batch_size, "sim10k", "cityscape", cfg_file="cfgs/vgg16.yml")
 
     frcnn_extra.tar_da_forward()
 
@@ -128,7 +129,7 @@ def main():
     optimizer = torch.optim.SGD(params, momentum=momentum, lr=lr)
     fasterRCNN = fasterRCNN.to(device)
 
-    logger = VisdomLogger(port=10999)
+    logger = VisdomLogger(port=9000)
     logger = LoggerForSacred(logger)
     #src_map = eval_frcnn(frcnn_extra, device, fasterRCNN, False)
     #tar_map = eval_frcnn_da(frcnn_extra, device, fasterRCNN, False)

@@ -20,8 +20,20 @@ from datasets.hollywood import hollywood
 from datasets.SCUTA import scuta
 from datasets.SCUTA_Head import scuta_head
 from datasets.SCUTB_Head import scutb_head
+from datasets.cityscape import cityscape
+from datasets.sim10k import sim10k
 
 import numpy as np
+
+for year in ['2007', '2012']:
+  for split in ['train_s', 'train_t', 'train_all', 'test_s', 'test_t','test_all']:
+    name = 'cityscape_{}_{}'.format(year, split)
+    __sets[name] = (lambda split=split, year=year: cityscape(split, year))
+
+for year in ['2012']:
+  for split in ['trainval10k']:
+    name = 'sim10k_{}'.format(split)
+    __sets[name] = (lambda split=split, year=year: sim10k(split, year))
 
 for split in ['trainval','test', 'debug', '500_trainval', '1000_trainval']:
     name = 'scuta_{}'.format(split)
@@ -50,23 +62,6 @@ for year in ['2007', '2012']:
     name = 'vocp_{}_{}'.format(year, split)
     __sets[name] = (lambda split=split, year=year: pascal_voc_person(split, year))
 
-# Set up coco_2014_<split>
-for year in ['2014']:
-  for split in ['train', 'val', 'minival', 'valminusminival', 'trainval']:
-    name = 'coco_{}_{}'.format(year, split)
-    __sets[name] = (lambda split=split, year=year: coco(split, year))
-
-# Set up coco_2014_cap_<split>
-for year in ['2014']:
-  for split in ['train', 'val', 'capval', 'valminuscapval', 'trainval']:
-    name = 'coco_{}_{}'.format(year, split)
-    __sets[name] = (lambda split=split, year=year: coco(split, year))
-
-# Set up coco_2015_<split>
-for year in ['2015']:
-  for split in ['test', 'test-dev']:
-    name = 'coco_{}_{}'.format(year, split)
-    __sets[name] = (lambda split=split, year=year: coco(split, year))
 
 # Set up vg_<split>
 # for version in ['1600-400-20']:

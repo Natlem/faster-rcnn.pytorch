@@ -178,6 +178,14 @@ class FasterRCNN_prepare():
                 imdb_name = "hollywood_debug"
             imdbval_name = "hollywood_test"
             set_cfgs = ['ANCHOR_SCALES', '[4, 8, 16, 32]', 'ANCHOR_RATIOS', '[0.5,1,2]', 'MAX_NUM_GT_BOXES', '20']
+        elif dataset == "cityscape":
+            imdb_name = "cityscape_2007_train_all"
+            imdbval_name = "cityscape_2007_test_all"
+            set_cfgs = ['ANCHOR_SCALES', '[4,8,16,32]', 'ANCHOR_RATIOS', '[0.5,1,2]', 'MAX_NUM_GT_BOXES', '50']
+        elif dataset == "sim10k":
+            imdb_name = "sim10k_trainval10k"
+            imdbval_name = "sim10k_trainval10k"
+            set_cfgs = ['ANCHOR_SCALES', '[4,8,16,32]', 'ANCHOR_RATIOS', '[0.5,1,2]', 'MAX_NUM_GT_BOXES', '50']
         elif dataset == "scuta":
             imdb_name = "scuta_trainval"
             if self.debug:
