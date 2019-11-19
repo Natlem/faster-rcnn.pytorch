@@ -51,9 +51,12 @@ def eval_fasterRCNN(**kwargs):
 def main():
 
     device = torch.device("cuda")
-    pth_pretrained = "all_saves/frcnn_pth_vgg16_17_0.822969253226584_scuta_head"
-    source_pretrained = "frcnn_model_vgg16_9_0.8100253828043802_scuta"
+    #pth_pretrained = "all_saves/frcnn_pth_vgg16_17_0.822969253226584_scuta_head"
+    #source_pretrained = "frcnn_model_vgg16_9_0.8100253828043802_scuta"
+    #source_model_pretrained = 'best_models/frcnn_pth_resnet101_40_0.7577954219018378_scuta_head'
+    source_model_pretrained = 'best_models/frcnn_100_pth_vgg16_20_0.59_scuta_head'
     #source_pretrained = "frcnn_model_vgg16_2_0.8605263157894737_hollywood"
+    source_pretrained = ""
 
     # Model Config
     net = "vgg16"
@@ -61,18 +64,22 @@ def main():
 
     batch_size = 1
     #frcnn_extra = FasterRCNN_prepare_da(net, batch_size, "hollywood", "scuta", "cfgs/vgg16.yml"
-    frcnn_extra = FasterRCNN_prepare(net, batch_size, "scuta", "cfgs/vgg16.yml")
+    frcnn_extra = FasterRCNN_prepare(net, batch_size, "scutb", "cfgs/vgg16.yml")
 
-    frcnn_extra.forward(is_training=True)
+    frcnn_extra.forward()
 
     if frcnn_extra.net == "vgg16":
-        fasterRCNN = vgg16(frcnn_extra.imdb_train.classes, pretrained=pretrained, class_agnostic=frcnn_extra.class_agnostic, model_path="", pth_path="data/pretrained_model/vgg16_caffe.pth")
+        fasterRCNN = vgg16(frcnn_extra.s_imdb_train.classes, pretrained=pretrained, class_agnostic=frcnn_extra.class_agnostic, model_path="", pth_path="data/pretrained_model/vgg16_caffe.pth")
+    else:
+        fasterRCNN = resnet(frcnn_extra.s_imdb_train.classes, pretrained=pretrained,
+                            class_agnostic=frcnn_extra.class_agnostic, pth_path=source_model_pretrained)
 
     fasterRCNN.create_architecture()
-    if pth_pretrained:
-        checkpoint = torch.load(pth_pretrained)
+    if source_model_pretrained:
+        checkpoint = torch.load(source_model_pretrained)
         fasterRCNN.load_state_dict(checkpoint['model'])
-    fasterRCNN = torch.load(source_pretrained)
+    else:
+        fasterRCNN = torch.load(source_pretrained)
 
     fasterRCNN = fasterRCNN.to(device)
 

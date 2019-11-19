@@ -58,13 +58,13 @@ def train_eval_fasterRCNN(epochs, **kwargs):
             lr *= frcnn_extra.lr_decay_gamma
 
         map = eval_frcnn(frcnn_extra, cuda, model, is_break)
-        torch.save(model, "{}/frcnn_model_{}_{}_{}_{}".format("all_saves", frcnn_extra.net, epoch, map, frcnn_extra.s_dataset))
-        torch.save(optimizer, "{}/frcnn_op_model_{}_{}_{}_{}".format("all_saves",frcnn_extra.net, epoch, map, frcnn_extra.s_dataset))
-        save_state_dict(model, optimizer, frcnn_extra.class_agnostic, "{}/frcnn_pth_{}_{}_{}_{}_head".format("all_saves",frcnn_extra.net, epoch, map, frcnn_extra.s_dataset))
-        save_conf(frcnn_extra, "{}/frcnn_conf_{}_{}_{}_{}".format("all_saves",frcnn_extra.net, epoch, map, frcnn_extra.s_dataset))
+        torch.save(model, "{}/frcnn_300_model_{}_{}_{}_{}".format("all_saves", frcnn_extra.net, epoch, map, frcnn_extra.s_dataset))
+        torch.save(optimizer, "{}/frcnn_300_op_model_{}_{}_{}_{}".format("all_saves",frcnn_extra.net, epoch, map, frcnn_extra.s_dataset))
+        save_state_dict(model, optimizer, frcnn_extra.class_agnostic, "{}/frcnn_300_pth_{}_{}_{}_{}_head".format("all_saves",frcnn_extra.net, epoch, map, frcnn_extra.s_dataset))
+        save_conf(frcnn_extra, "{}/frcnn_300_conf_{}_{}_{}_{}".format("all_saves",frcnn_extra.net, epoch, map, frcnn_extra.s_dataset))
         if logger is not None:
-            logger.log_scalar("frcnn_{}_{}_training_loss".format(frcnn_extra.net, logger_id), total_loss, epoch)
-            logger.log_scalar("frcnn_{}_{}_target_val_acc".format(frcnn_extra.net, logger_id), map, epoch)
+            logger.log_scalar("frcnn_300_{}_{}_training_loss".format(frcnn_extra.net, logger_id), total_loss, epoch)
+            logger.log_scalar("frcnn_300_{}_{}_target_val_acc".format(frcnn_extra.net, logger_id), map, epoch)
         torch.cuda.empty_cache()
 
 
@@ -76,15 +76,15 @@ def main():
     device = torch.device("cuda")
 
     # Model Config
-    net = "resnet101"
+    net = "vgg16"
     pretrained = True
 
     batch_size = 1
-    frcnn_extra = FasterRCNN_prepare(net, batch_size, "pascal_voc_person", "cfgs/{}.yml".format(net))
+    frcnn_extra = FasterRCNN_prepare(net, batch_size, "scuta", "cfgs/{}.yml".format(net))
     frcnn_extra.forward()
 
 
-    if frcnn_extra.s_dataset == 'scuta' or frcnn_extra.s_dataset == 'scuta_ori':
+    if frcnn_extra.s_dataset == 'scuta' or frcnn_extra.s_dataset == 'scuta_ori' or frcnn_extra.s_dataset == 'scutb':
         if frcnn_extra.net == "vgg16":
             lr = 0.01
             epochs = 20

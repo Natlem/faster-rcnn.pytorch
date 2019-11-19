@@ -42,18 +42,23 @@ def train_eval_fasterRCNN(epochs, **kwargs):
     cuda = kwargs["cuda"]
 
     logger = kwargs["logger"]
-    logger_id = frcnn_extra.dataset
+    logger_id = frcnn_extra.s_dataset
 
     is_break = False
     if "is_break" in kwargs and kwargs["is_break"]:
         is_break = True
 
-    kwargs["train_loader"] = frcnn_extra.dataloader_train
-
     loss_acc = []
     lr = optimizer.param_groups[0]['lr']
-    d_cls_image = D_cls_image().to(cuda)
-    d_cls_inst = D_cls_inst().to(cuda)
+
+    if frcnn_extra.net == "vgg16":
+        d_cls_image = D_cls_image().to(cuda)
+        d_cls_inst = D_cls_inst().to(cuda)
+    else:
+        d_cls_image = D_cls_image(ch_in=1024).to(cuda)
+        d_cls_inst = D_cls_inst(fc_size=2048).to(cuda)
+
+
     d_image_opt = torch.optim.SGD(d_cls_image.parameters(), lr=lr,
                                   weight_decay=cfg.TRAIN.WEIGHT_DECAY, momentum=cfg.TRAIN.MOMENTUM)
     d_inst_opt = torch.optim.SGD(d_cls_inst.parameters(), lr=lr,
@@ -62,22 +67,22 @@ def train_eval_fasterRCNN(epochs, **kwargs):
     d_cst_tar_loss = 0
 
     for epoch in range(1, epochs + 1):
-        start_steps = epoch * len(frcnn_extra.dataloader_train)
-        total_steps = epochs * len(frcnn_extra.dataloader_train)
+        start_steps = epoch * len(frcnn_extra.s_dataloader_train)
+        total_steps = epochs * len(frcnn_extra.s_dataloader_train)
         #total_loss, d_cst_loss, d_img_loss, d_inst_loss = train_frcnn_da_img(frcnn_extra, cuda, model, optimizer, d_cls_image, d_cls_inst, d_image_opt, d_inst_opt,
         #                            start_steps, total_steps, is_break)
 
-        total_loss, d_cst_loss, d_img_loss, d_inst_loss = train_frcnn_da_img(frcnn_extra, cuda, model, optimizer, d_cls_image, d_image_opt,
+        total_loss, d_cst_loss, d_img_loss, d_inst_loss = train_frcnn_da(frcnn_extra, cuda, model, optimizer, d_cls_image, d_cls_inst, d_image_opt, d_inst_opt,
                                     start_steps, total_steps, is_break)
 
         if epoch % (frcnn_extra.lr_decay_step + 1) == 0:
             adjust_learning_rate(optimizer, frcnn_extra.lr_decay_gamma)
-            lr *= frcnn_extra.lr_dsecay_gamma
+            lr *= frcnn_extra.lr_decay_gamma
 
         src_map = eval_frcnn(frcnn_extra, cuda, model, is_break)
         tar_map = eval_frcnn_da(frcnn_extra, cuda, model, is_break)
-        torch.save(model, "frcnn_da_img_model_{}_{}_{}_{}".format(frcnn_extra.net, epoch, tar_map, frcnn_extra.dataset))
-        torch.save(optimizer, "frcnn_da_img_op_model_{}_{}_{}_{}".format(frcnn_extra.net, epoch, tar_map, frcnn_extra.dataset))
+        torch.save(model, "{}/frcnn_da_img_model_{}_{}_{}_{}".format("all_saves",frcnn_extra.net, epoch, tar_map, frcnn_extra.tar_dataset))
+        torch.save(optimizer, "{}/frcnn_da_img_op_model_{}_{}_{}_{}".format("all_saves",frcnn_extra.net, epoch, tar_map, frcnn_extra.tar_dataset))
         if logger is not None:
             logger.log_scalar("frcnn_da_img_{}_{}_training_loss".format(frcnn_extra.net, logger_id), total_loss, epoch)
             logger.log_scalar("frcnn_da_img_{}_{}_d_cst_loss".format(frcnn_extra.net, logger_id), d_cst_loss, epoch)
@@ -91,13 +96,19 @@ def train_eval_fasterRCNN(epochs, **kwargs):
     return loss_acc
 
 def main():
-    lr = 0.01
+    lr = 0.001
     momentum = 0.9
     device = torch.device("cuda")
     epochs = 20
     #source_model_pretrained = 'frcnn_model_vgg16_2_0.7956096921947304_hollywood'
-    source_model_pretrained = 'frcnn_model_vgg16_9_0.8100253828043802_scuta'
+    #source_model_pretrained = 'frcnn_model_vgg16_9_0.8100253828043802_scuta'
+    #source_model_pretrained = 'best_models/frcnn_pth_resnet101_40_0.7577954219018378_scuta_head'
+    #source_model_pretrained = "best_models/frcnn_100_pth_vgg16_20_0.59_scuta_head"
+    source_model_pretrained = 'best_models/frcnn_pth_vgg16_20_0.8214922261155124_scuta_head'
 
+    #model_pretrained = "best_models/frcnn_model_resnet101_40_0.7577954219018378_scuta"
+    #source_model_pretrained = ""
+    model_pretrained = ""
 
     # Model Config
     net = "vgg16"
@@ -105,14 +116,20 @@ def main():
 
     batch_size = 1
     #frcnn_extra = FasterRCNN_prepare_da(net, batch_size, "hollywood", "scuta", "cfgs/vgg16.yml"
-    frcnn_extra = FasterRCNN_prepare_da(net, batch_size, "scuta", "scuta", "cfgs/vgg16.yml")
+    frcnn_extra = FasterRCNN_prepare_da(net, batch_size, "scuta", "scutb", "cfgs/vgg16.yml")
 
     frcnn_extra.tar_da_forward()
 
     if frcnn_extra.net == "vgg16":
-        fasterRCNN = vgg16(frcnn_extra.imdb_train.classes, pretrained=pretrained, class_agnostic=frcnn_extra.class_agnostic, model_path=source_model_pretrained, pth_path='')
+        fasterRCNN = vgg16(frcnn_extra.s_imdb_train.classes, pretrained=pretrained, class_agnostic=frcnn_extra.class_agnostic, model_path="")
+    else:
+        fasterRCNN = resnet(frcnn_extra.s_imdb_train.classes, pretrained=pretrained,
+                            class_agnostic=frcnn_extra.class_agnostic, pth_path="", model_path=model_pretrained)
+
     fasterRCNN.create_architecture()
-    fasterRCNN = torch.load(source_model_pretrained)
+    if source_model_pretrained:
+        checkpoint = torch.load(source_model_pretrained)
+        fasterRCNN.load_state_dict(checkpoint['model'])
 
     params = []
     for key, value in dict(fasterRCNN.named_parameters()).items():
@@ -126,9 +143,8 @@ def main():
     optimizer = torch.optim.SGD(params, momentum=momentum, lr=lr)
     fasterRCNN = fasterRCNN.to(device)
 
-    logger = VisdomLogger(port=9000)
+    logger = VisdomLogger(port=10999)
     logger = LoggerForSacred(logger)
-    src_map = eval_frcnn(frcnn_extra, device, fasterRCNN, False)
     train_eval_fasterRCNN(epochs, cuda=device, model=fasterRCNN, optimizer=optimizer,
                    logger=logger, frcnn_extra=frcnn_extra, is_break=False)
 
