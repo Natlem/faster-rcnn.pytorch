@@ -134,7 +134,7 @@ def main():
     params = []
     for key, value in dict(fasterRCNN.named_parameters()).items():
         if value.requires_grad:
-            if 'bias' in key:
+            if 'bias' in key:3
                 params += [{'params': [value], 'lr': lr * (cfg.TRAIN.DOUBLE_BIAS + 1), \
                             'weight_decay': cfg.TRAIN.BIAS_DECAY and cfg.TRAIN.WEIGHT_DECAY or 0}]
             else:

@@ -78,22 +78,25 @@ def main():
     model_2_model = 'best_models/frcnn_da_100_img_model_vgg_16_20_0.62_scutb'
 
     # Lower Bound(all) vs DA(all)
+
     model_1_pth = 'best_models/frcnn_pth_vgg16_20_0.8214922261155124_scuta_head'
     model_1_model = ''
     model_2_pth = ''
     model_2_model = 'best_models/frcnn_da_img_model_vgg16_20_0.6363939966469591_scutb'
 
     # Lower Bound(all) vs UpperBound(all)
-    model_1_pth = 'best_models/frcnn_pth_vgg16_20_0.8214922261155124_scuta_head'
-    model_1_model = ''
-    model_2_pth = 'best_models/frcnn_pth_vgg16_20_0.8859604884411493_scutb_head'
-    model_2_model = ''
+    if False:
+        model_1_pth = 'best_models/frcnn_pth_vgg16_20_0.8214922261155124_scuta_head'
+        model_1_model = ''
+        model_2_pth = 'best_models/frcnn_pth_vgg16_20_0.8859604884411493_scutb_head'
+        model_2_model = ''
 
     # Upper bound vs DA(all )
-    model_1_pth = 'best_models/frcnn_pth_vgg16_20_0.8859604884411493_scutb_head'
-    model_1_model = ''
-    model_2_pth = ''
-    model_2_model = 'best_models/frcnn_da_img_model_vgg16_20_0.6363939966469591_scutb'
+    if False:
+        model_1_pth = 'best_models/frcnn_pth_vgg16_20_0.8859604884411493_scutb_head'
+        model_1_model = ''
+        model_2_pth = ''
+        model_2_model = 'best_models/frcnn_da_img_model_vgg16_20_0.6363939966469591_scutb'
 
     model_1 = vgg16(frcnn_extra.s_imdb_train.classes, pretrained=pretrained,
                        class_agnostic=frcnn_extra.class_agnostic,

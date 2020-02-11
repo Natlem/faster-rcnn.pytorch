@@ -4,8 +4,9 @@ from roi_data_layer.roidb import combined_roidb
 from roi_data_layer.roibatchLoader import roibatchLoader
 
 from model.utils.config import cfg, cfg_from_file, cfg_from_list, get_output_dir
-from model.utils.net_utils import weights_normal_init, save_net, load_net, adjust_learning_rate, save_checkpoint, clip_gradient
-
+from model.utils.net_utils import weights_normal_init, save_net, load_net, adjust_learning_rate, \
+    save_checkpoint, clip_gradient, vis_detections
+from model.utils.blob import im_list_to_blob
 from model.faster_rcnn.vgg16 import vgg16
 from model.faster_rcnn.resnet import resnet
 from model.rpn.bbox_transform import bbox_transform_inv
@@ -21,6 +22,7 @@ import time
 from model.faster_rcnn.domain_adapt import D_cls_image, D_cls_inst, consistency_reg
 import torchvision
 import mmd
+import cv2
 
 class LoggerForSacred():
     def __init__(self, visdom_logger, ex_logger=None):
@@ -328,6 +330,109 @@ def train_frcnn(frcnn_extra, device, fasterRCNN, optimizer, is_break=False):
     del rois_label
     del loss
     return loss_temp
+
+def _get_image_blob(im):
+  """Converts an image into a network input.
+  Arguments:
+    im (ndarray): a color image in BGR order
+  Returns:
+    blob (ndarray): a data blob holding an image pyramid
+    im_scale_factors (list): list of image scales (relative to im) used
+      in the image pyramid
+  """
+  im_orig = im.astype(np.float32, copy=True)
+  im_orig -= cfg.PIXEL_MEANS
+
+  im_shape = im_orig.shape
+  im_size_min = np.min(im_shape[0:2])
+  im_size_max = np.max(im_shape[0:2])
+
+  processed_ims = []
+  im_scale_factors = []
+
+  for target_size in cfg.TEST.SCALES:
+    im_scale = float(target_size) / float(im_size_min)
+    # Prevent the biggest axis from being more than MAX_SIZE
+    if np.round(im_scale * im_size_max) > cfg.TEST.MAX_SIZE:
+      im_scale = float(cfg.TEST.MAX_SIZE) / float(im_size_max)
+    im = cv2.resize(im_orig, None, None, fx=im_scale, fy=im_scale,
+            interpolation=cv2.INTER_LINEAR)
+    im_scale_factors.append(im_scale)
+    processed_ims.append(im)
+
+  # Create a blob to hold the input images
+  blob = im_list_to_blob(processed_ims)
+
+  return blob, np.array(im_scale_factors)
+
+
+def eval_one_img_frcnn(one_image, frcnn_extra, device, fasterRCNN):
+
+    #rgb to bgr
+    im = one_image[:, :, ::-1]
+
+    blobs, im_scales = _get_image_blob(im)
+    im_blob = blobs
+    im_info_np = np.array([[im_blob.shape[1], im_blob.shape[2], im_scales[0]]], dtype=np.float32)
+
+    im_data_pt = torch.from_numpy(im_blob)
+    im_data_pt = im_data_pt.permute(0, 3, 1, 2)
+    im_info_pt = torch.from_numpy(im_info_np)
+
+    im_data = im_data_pt.to(device)
+    im_info = im_info_pt.to(device)
+    gt_boxes = torch.zeros(1,1,5).to(device)
+    num_boxes = torch.zeros(1).to(device)
+
+    fasterRCNN.eval()
+
+    rois, cls_prob, bbox_pred, \
+    rpn_loss_cls, rpn_loss_box, \
+    RCNN_loss_cls, RCNN_loss_bbox, \
+    rois_label, feat_map_1, roi_pool_1 = fasterRCNN(im_data, im_info, gt_boxes, num_boxes, is_target=False)
+
+    scores = cls_prob.data
+    boxes = rois.data[:, :, 1:5]
+
+    if cfg.TEST.BBOX_REG:
+        # Apply bounding-box regression deltas
+        box_deltas = bbox_pred.data
+        if cfg.TRAIN.BBOX_NORMALIZE_TARGETS_PRECOMPUTED:
+            # Optionally normalize targets by a precomputed mean and stdev
+            box_deltas = box_deltas.view(-1, 4) * torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_STDS).to(device) \
+                         + torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_MEANS).to(device)
+            box_deltas = box_deltas.view(1, -1, 4 * frcnn_extra.s_imdb_train.num_classes)
+
+        pred_boxes = bbox_transform_inv(boxes, box_deltas, 1)
+        pred_boxes = clip_boxes(pred_boxes, im_info.data, 1)
+    else:
+        # Simply repeat the boxes, once for each class
+        pred_boxes = np.tile(boxes, (1, scores.shape[1]))
+
+    pred_boxes /= im_scales[0]
+
+    scores = scores.squeeze()
+    pred_boxes = pred_boxes.squeeze()
+    im2show = np.copy(im)
+    for j in range(1, frcnn_extra.s_imdb_train.num_classes):
+        inds = torch.nonzero(scores[:, j] > frcnn_extra.thresh).view(-1)
+        # if there is det
+        if inds.numel() > 0:
+            cls_scores = scores[:, j][inds]
+            _, order = torch.sort(cls_scores, 0, True)
+            cls_boxes = pred_boxes[inds][:, j * 4:(j + 1) * 4]
+
+            cls_dets = torch.cat((cls_boxes, cls_scores.unsqueeze(1)), 1)
+            # cls_dets = torch.cat((cls_boxes, cls_scores), 1)
+            cls_dets = cls_dets[order]
+            # keep = nms(cls_dets, cfg.TEST.NMS, force_cpu=not cfg.USE_GPU_NMS)
+            keep = nms(cls_boxes[order, :], cls_scores[order], cfg.TEST.NMS)
+            cls_dets = cls_dets[keep.view(-1).long()]
+            im2show = vis_detections(im2show, "", cls_dets.cpu().numpy(), 0.5)
+
+    return im2show
+
+
 
 def eval_kl_frcnn(frcnn_extra, device, fasterRCNN_1, fasterRCNN_2, is_break=False):
 
