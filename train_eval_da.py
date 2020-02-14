@@ -75,6 +75,7 @@ def train_eval_fasterRCNN(epochs, **kwargs):
         total_loss, d_cst_loss, d_img_loss, d_inst_loss = train_frcnn_da(frcnn_extra, cuda, model, optimizer, d_cls_image, d_cls_inst, d_image_opt, d_inst_opt,
                                     start_steps, total_steps, is_break)
 
+
         if epoch % (frcnn_extra.lr_decay_step + 1) == 0:
             adjust_learning_rate(optimizer, frcnn_extra.lr_decay_gamma)
             lr *= frcnn_extra.lr_decay_gamma
@@ -134,7 +135,7 @@ def main():
     params = []
     for key, value in dict(fasterRCNN.named_parameters()).items():
         if value.requires_grad:
-            if 'bias' in key:3
+            if 'bias' in key:
                 params += [{'params': [value], 'lr': lr * (cfg.TRAIN.DOUBLE_BIAS + 1), \
                             'weight_decay': cfg.TRAIN.BIAS_DECAY and cfg.TRAIN.WEIGHT_DECAY or 0}]
             else:

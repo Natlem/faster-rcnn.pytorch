@@ -705,12 +705,13 @@ def train_frcnn_da(frcnn_extra_da, device, fasterRCNN, optimizer, d_cls_image, d
 
         s_loss = rpn_loss_cls.mean() + rpn_loss_box.mean() \
                  + RCNN_loss_cls.mean() + RCNN_loss_bbox.mean()
-        loss = 1 * s_loss + (0.1) * (d_img_loss.mean() + d_inst_loss.mean() + d_cst_loss.mean())
+        loss =  s_loss + (0.1) * (d_img_loss.mean() + d_inst_loss.mean() + d_cst_loss.mean())
         loss_temp += float(loss.item())
         optimizer.zero_grad()
         d_inst_opt.zero_grad()
         d_image_opt.zero_grad()
         loss.backward()
+
         if frcnn_extra_da.net == "vgg16":
             clip_gradient(fasterRCNN, 10.)
         optimizer.step()
@@ -734,6 +735,116 @@ def train_frcnn_da(frcnn_extra_da, device, fasterRCNN, optimizer, d_cls_image, d
     del loss
     return loss_temp, d_cst_loss, d_img_loss, d_inst_loss
 
+def train_frcnn_da(frcnn_extra_da, device, fasterRCNN, optimizer, d_cls_image, d_cls_inst, d_image_opt, d_inst_opt,
+                   start_steps, total_steps, is_break=False):
+    fasterRCNN.train()
+    d_cls_image.train()
+    d_cls_inst.train()
+    loss_temp = 0
+
+    src_data_iter = iter(frcnn_extra_da.s_dataloader_train)
+    tar_data_iter = iter(frcnn_extra_da.tar_dataloader_train)
+
+    if frcnn_extra_da.tar_iters_per_epoch < frcnn_extra_da.s_iters_per_epoch:
+        iter_per_epoch = frcnn_extra_da.tar_iters_per_epoch
+    else:
+        iter_per_epoch = frcnn_extra_da.s_iters_per_epoch
+
+    for step in range(iter_per_epoch):
+        tar_data = next(tar_data_iter)
+        src_data = next(src_data_iter)
+        src_im_data = src_data[0].to(device)
+        src_im_info = src_data[1].to(device)
+        src_gt_boxes = src_data[2].to(device)
+        src_num_boxes = src_data[3].to(device)
+
+        tar_im_data = tar_data[0].to(device)
+
+        if tar_im_data.shape[2:] != src_im_data.shape[2:]:
+            tar_im_data = F.interpolate(tar_im_data, size=src_im_data.shape[2:]).to(device)
+
+        tar_im_info = tar_data[1].to(device)
+        tar_gt_boxes = None
+        tar_num_boxes = None
+
+        fasterRCNN.zero_grad()
+        d_cls_image.zero_grad()
+        d_cls_inst.zero_grad()
+        rois, cls_prob, bbox_pred, \
+        rpn_loss_cls, rpn_loss_box, \
+        RCNN_loss_cls, RCNN_loss_bbox, \
+        rois_label, src_feat_map, src_roi_pool = fasterRCNN(src_im_data, src_im_info, src_gt_boxes, src_num_boxes,
+                                                            is_target=False)
+        tar_feat_map, tar_roi_pool = fasterRCNN(tar_im_data, tar_im_info, tar_gt_boxes, tar_num_boxes, is_target=True)
+
+        p = float(step + start_steps) / total_steps
+        constant = 2. / (1. + np.exp(-10 * p)) - 1
+
+        d_cls_image.set_beta(constant)
+        d_cls_inst.set_beta(constant)
+
+        src_d_img_score = d_cls_image(src_feat_map)
+        src_d_inst_score = d_cls_inst(src_roi_pool)
+        tar_d_img_score = d_cls_image(tar_feat_map)
+        tar_d_inst_score = d_cls_inst(tar_roi_pool)
+
+        s1 = list(src_d_img_score.size())[0]
+        s2 = list(tar_d_img_score.size())[0]
+        s3 = list(src_d_inst_score.size())[0]
+        s4 = list(tar_d_inst_score.size())[0]
+
+        src_img_label = torch.zeros(s1).long().to(device)
+        src_inst_label = torch.zeros(s3).long().to(device)
+        tar_img_label = torch.ones(s2).long().to(device)
+        tar_inst_label = torch.ones(s4).long().to(device)
+
+        src_d_img_loss = d_criteria(src_d_img_score, src_img_label)
+        src_d_inst_loss = d_criteria(src_d_inst_score, src_inst_label)
+        tar_d_img_loss = d_criteria(tar_d_img_score, tar_img_label)
+        tar_d_inst_loss = d_criteria(tar_d_inst_score, tar_inst_label)
+
+        d_img_loss = src_d_img_loss + tar_d_img_loss
+        d_inst_loss = src_d_inst_loss + tar_d_inst_loss
+
+        src_feat_map_dim = list(sr1c_feat_map.size())[1] * list(src_feat_map.size())[2] * list(src_feat_map.size())[3]
+        tar_feat_map_dim = list(tar_feat_map.size())[1] * list(tar_feat_map.size())[2] * list(tar_feat_map.size())[3]
+
+        src_d_cst_loss = consistency_reg(src_feat_map_dim, src_d_img_score, src_d_inst_score, domain='src')
+        tar_d_cst_loss = consistency_reg(tar_feat_map_dim, tar_d_img_score, tar_d_inst_score, domain='tar')
+
+        d_cst_loss = src_d_cst_loss + tar_d_cst_loss
+
+        s_loss = rpn_loss_cls.mean() + rpn_loss_box.mean() \
+                 + RCNN_loss_cls.mean() + RCNN_loss_bbox.mean()
+        loss =  s_loss + (0.1) * (d_img_loss.mean() + d_inst_loss.mean() + d_cst_loss.mean())
+        loss_temp += float(loss.item())
+        optimizer.zero_grad()
+        d_inst_opt.zero_grad()
+        d_image_opt.zero_grad()
+        loss.backward()
+
+        if frcnn_extra_da.net == "vgg16":
+            clip_gradient(fasterRCNN, 10.)
+        optimizer.step()
+        d_inst_opt.step()
+        d_image_opt.step()
+        if is_break:
+            break
+    loss_temp = loss_temp / frcnn_extra_da.s_iters_per_epoch
+    del rois
+    del cls_prob
+    del bbox_pred
+    del rpn_loss_cls
+    del rpn_loss_box
+    del RCNN_loss_cls
+    del RCNN_loss_bbox
+    del rois_label
+    del src_d_img_loss
+    del src_d_inst_loss
+    del tar_d_img_loss
+    del tar_d_inst_loss
+    del loss
+    return loss_temp, d_cst_loss, d_img_loss, d_inst_loss
 
 def train_frcnn_da_img(frcnn_extra_da, device, fasterRCNN, optimizer, d_cls_image, d_image_opt,
                        start_steps, total_steps, is_break=False):
